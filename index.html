@@ -43,7 +43,13 @@ window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1
 .rank-slot{min-height:52px;transition:all .2s ease}
 .rank-slot.drag-over{background:rgba(0,64,48,.12);border-color:#004030;transform:scale(1.02)}
 .dark .rank-slot.drag-over{background:rgba(216,195,165,.15);border-color:#D8C3A5}
-.member-chip{cursor:grab;user-select:none;transition:all .15s ease}
+.member-chip{
+  cursor:grab;
+  user-select:none;
+  transition:all .15s ease;
+  /* 關鍵防破版：禁止手機原生的滑動、縮放等觸控行為干擾拖曳 */
+  touch-action: none; 
+}
 .member-chip:active{cursor:grabbing;opacity:.7}
 .member-chip.dragging{opacity:.4;transform:scale(.95)}
 .rank-1{background:linear-gradient(135deg,#FFD700,#FFA500);color:#4a3600}
@@ -106,7 +112,7 @@ setup_remove:"移除",setup_weight_range:"加權因子範圍",setup_weight_min:"
 setup_save:"儲存設定",setup_saved:"設定已儲存！",
 setup_assignment:"作業名稱",setup_assignment_ph:"例：期中報告",
 setup_group_score:"小組作業成績",setup_group_score_ph:"例：85",setup_group_score_desc:"互評加權因子 × 此成績 = 個人得分",
-setup_deadline:"截止日期",setup_deadline_ph:"例：2026-04-15",
+setup_deadline:"截止日期 (預設 23:59 截止)",setup_deadline_ph:"例：2026-04-15",
 setup_eval_url:"互評網頁 URL",setup_eval_url_ph:"部署後的網址",
 codes_title:"登入碼管理",codes_generate:"產生登入碼",
 codes_export_gas:"複製資料",codes_export_csv:"匯出 CSV",codes_copy_done:"已複製！",
@@ -142,7 +148,7 @@ gas_step2:"您可以直接在「登入碼」頁面點擊按鈕，遠端遙控寄
 gas_step3:"若要每天自動催繳，請在 Apps Script 中新增「時間驅動」的觸發條件執行 sendReminders。",
 gas_copy_script:"複製 GAS 腳本",gas_copied:"已複製！",
 theme_light:"淺色",theme_dark:"深色",lang_switch:"EN",
-date:"Version 2026.03.28",copyright:"For Educational Use Only",
+date:"Version 2026.03.29",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
 architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
 cloud_mode_on:"☁️ 雲端模式啟用中",cloud_mode_off:"💻 本機單機模式"
@@ -180,7 +186,7 @@ setup_remove:"Remove",setup_weight_range:"Weight Factor",setup_weight_min:"Min",
 setup_save:"Save Settings",setup_saved:"Settings saved!",
 setup_assignment:"Assignment",setup_assignment_ph:"e.g., Midterm Report",
 setup_group_score:"Group Score",setup_group_score_ph:"e.g., 85",setup_group_score_desc:"Weight factor × group score = final score",
-setup_deadline:"Deadline",setup_deadline_ph:"e.g., 2026-04-15",
+setup_deadline:"Deadline (Default 23:59 Due)",setup_deadline_ph:"e.g., 2026-04-15",
 setup_eval_url:"App URL",setup_eval_url_ph:"Deployed URL",
 codes_title:"Login Codes",codes_generate:"Generate Codes",
 codes_export_gas:"Copy Data",codes_export_csv:"Export CSV",codes_copy_done:"Copied!",
@@ -216,7 +222,7 @@ gas_step2:"Use buttons in Codes tab to send emails remotely.",
 gas_step3:"Add time-driven trigger for sendReminders in Apps Script for daily automation.",
 gas_copy_script:"Copy GAS Script",gas_copied:"Copied!",
 theme_light:"Light",theme_dark:"Dark",lang_switch:"中",
-date:"Version 2026.03.28",copyright:"For Educational Use Only",
+date:"Version 2026.03.29",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
 architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
 cloud_mode_on:"☁️ Cloud Mode Active",cloud_mode_off:"💻 Local Mode"
@@ -363,7 +369,10 @@ function doPost(e) {
       if (sheet.getLastRow() === 0) {
         sheet.appendRow(['student_id', 'group', 'evaluations', 'timestamp']);
       }
-      sheet.appendRow([sid, grp, payload, new Date().toISOString()]);
+      
+      // 使用 Utilities 轉換為台灣時間 (Asia/Taipei)
+      const twTime = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+      sheet.appendRow([sid, grp, payload, twTime]);
       output.ok = true;
     }
     // ─── TA / Admin 雲端登入與資料同步 ───
@@ -487,7 +496,7 @@ function doSendLoginCodes() {
       + '<h2>同儕互評 Peer Evaluation</h2>'
       + '<p>同學您好：<br>請使用下方登入碼完成 <b>' + assign + '</b> 的同儕互評。</p>'
       + '<div style="background:#f0fdf4;border:2px solid #166534;padding:15px;text-align:center;font-size:24px;font-weight:bold;letter-spacing:2px;margin:20px 0;">' + code + '</div>'
-      + '<p>截止期限 Deadline: ' + deadline + '</p>'
+      + '<p>截止期限 Deadline: ' + deadline + ' 23:59</p>'
       + '<a href="' + evalUrl + '" style="background:#166534;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">前往互評 Enter -></a></div>';
     
     try { MailApp.sendEmail({to: email, subject: subject, htmlBody: html}); sent++; Utilities.sleep(300); } 
@@ -934,12 +943,28 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
     g.style.cssText=`position:fixed;z-index:9999;pointer-events:none;padding:8px 16px;background:#004030;color:#D8C3A5;border-radius:8px;font-size:14px;font-weight:600;transform:translate(-50%,-50%);left:${touch.clientX}px;top:${touch.clientY}px;`;
     document.body.appendChild(g);ghostRef.current=g;
   };
+  
+  // ✨ (需求A) 加入邊緣自動捲動邏輯
   const handleTouchMove=(e)=>{
-    e.preventDefault();const touch=e.touches[0];
-    if(ghostRef.current){ghostRef.current.style.left=touch.clientX+'px';ghostRef.current.style.top=touch.clientY+'px'}
+    e.preventDefault(); // 配合 CSS 的 touch-action: none 確保不破版
+    const touch=e.touches[0];
+    if(ghostRef.current){
+      ghostRef.current.style.left=touch.clientX+'px';
+      ghostRef.current.style.top=touch.clientY+'px';
+    }
+
+    // 螢幕上下邊緣偵測與自動捲動 (Auto-scroll)
+    const edgeThreshold = 80;
+    if (touch.clientY < edgeThreshold) {
+      window.scrollBy(0, -15);
+    } else if (touch.clientY > window.innerHeight - edgeThreshold) {
+      window.scrollBy(0, 15);
+    }
+
     const el=document.elementFromPoint(touch.clientX,touch.clientY);
     if(el){const se=el.closest('[data-slot]');setDragOverSlot(se?se.dataset.slot:null)}
   };
+  
   const handleTouchEnd=()=>{
     if(ghostRef.current){document.body.removeChild(ghostRef.current);ghostRef.current=null}
     if(dragItem&&dragOverSlot!==null)moveItem(dragItem.mid,dragItem.from,dragOverSlot==='pool'?'pool':dragOverSlot);
@@ -1084,7 +1109,7 @@ const App=()=>{
     }
   };
 
-  // ─── Admin / TA 登入 (雲端支援同步) ───
+  // ─── Admin / TA 登入 ───
   const doAdminLogin = async () => {
     const uid = (adminUserRef.current?.value || '').trim();
     const pw = (adminPwRef.current?.value || '').trim();
@@ -1130,7 +1155,7 @@ const App=()=>{
     }
   };
 
-  // ─── 學生送出成績 (✨ 新增組別回傳) ───
+  // ─── 學生送出成績 ───
   const handleSubmitEval=()=>{
     const criteriaToUse = isCloudMode ? cloudData.criteria : store.criteria;
     const allDone = criteriaToUse.every(c=>evalRankings[c.id]!==null);
@@ -1311,7 +1336,7 @@ const App=()=>{
     downloadCSV('peer_eval_results.csv',csv);
   };
 
-  // ✨ (需求D) 匯出完整計算結果至 Google Sheets 工作表
+  // ✨ 匯出完整計算結果至 Google Sheets 工作表
   const handlePushResultsToCloud = async () => {
     if(!isCloudMode) return;
     if(!computeResults) return;
