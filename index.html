@@ -258,7 +258,7 @@ function doPost(e) {
         if(sets[i][0] === 'users') { try { users = JSON.parse(sets[i][1]); } catch(e){} }
       }
       const validUser = users.find(u => u.password === data.pw);
-      if (!validUser) throw new Error('Unauthorized');
+      if (!validUser) throw new Error('驗證失敗，無法發信');
       
       output.message = action === 'send_codes' ? doSendLoginCodes() : doSendReminders();
       output.ok = true;
@@ -351,7 +351,11 @@ function doPost(e) {
       if (action === 'admin_login') {
         const uid = String(data.uid || '').trim();
         const pw = String(data.pw || '').trim();
-        if (users.length === 0) users = [{id:'prof',role:'professor',name:'Prof. Lo'}]; 
+        
+        // 防呆：如果雲端還沒有任何使用者(初次使用或尚未推播)，建立預設管理員
+        if (users.length === 0) {
+          users = [{id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}];
+        }
         
         user = users.find(u => u.id === uid && u.password === pw);
         if (!user && users.find(u => u.role === 'professor' && u.password === pw)) {
@@ -360,7 +364,8 @@ function doPost(e) {
         if (!user) throw new Error('帳號或密碼錯誤 (Invalid credentials)');
       } else {
         const pw = String(data.pw || '').trim();
-        if (!users.find(u => u.password === pw)) throw new Error('Unauthorized');
+        if (users.length === 0) users = [{id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}];
+        if (!users.find(u => u.password === pw)) throw new Error('驗證失敗 (Unauthorized)');
       }
 
       const rosterRaw = ss.getSheetByName('Roster') ? ss.getSheetByName('Roster').getDataRange().getValues() : [];
@@ -794,7 +799,7 @@ function extractCriteriaLocal(text) {
     if (seen.has(num)) continue;
     seen.add(num);
     let desc = match[2].trim().replace(/^該組員在?/,'').replace(/^每次參與小組討論時[，,]?\s*/,'');
-    const enMap = { '準備充分程度': 'Preparation Level', '準備充分': 'Preparation', '切中要點或有創意貢獻': 'Insight & Creative Contribution', '切中要點': 'Insight', '積極帶領討論或充份合作': 'Leadership & Collaboration', '帶領討論': 'Discussion Leadership', '書面報告整理與撰寫': 'Written Report Contribution', '主 ব্যথা且具體貢獻': 'Proactive Contribution', '團隊士氣或討論氣氛': 'Team Morale & Atmosphere', '正面且顯著提升': 'Positive Impact' };
+    const enMap = { '準備充分程度': 'Preparation Level', '準備充分': 'Preparation', '切中要點或有創意貢獻': 'Insight & Creative Contribution', '切中要點': 'Insight', '積極帶領討論或充份合作': 'Leadership & Collaboration', '帶領討論': 'Discussion Leadership', '書面報告整理與撰寫': 'Written Report Contribution', '主動且具體貢獻': 'Proactive Contribution', '團隊士氣或討論氣氛': 'Team Morale & Atmosphere', '正面且顯著提升': 'Positive Impact' };
     let nameEn = 'EC' + num, descEn = '', zhShortMap = {};
     for (const [zh, en] of Object.entries(enMap)) {
       if (desc.includes(zh)) { nameEn = en; descEn = en + ' ranking'; zhShortMap.short = zh; break; }
