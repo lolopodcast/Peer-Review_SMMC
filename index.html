@@ -129,6 +129,7 @@ results_group_score:"組成績",results_final_score:"個人得分",
 results_submissions:"進度",results_export:"匯出 CSV",
 results_no_data:"尚無資料",results_detail:"明細",results_by_criterion:"各項目排序",
 results_sync_cloud:"雲端同步最新成績",results_syncing:"同步中...",results_sync_done:"同步完成！",
+results_push_cloud:"匯出至雲端報表",results_pushing:"匯出中...",results_push_done:"報表已同步！",
 gas_title:"部署 & 雲端設定指南",
 deploy_title:"如何啟用雙向雲端同步",
 deploy_step1:"步驟 1：建立 Google Sheets",deploy_step1_desc:"新建 Google Sheets，開啟「擴充功能 -> Apps Script」。",
@@ -202,6 +203,7 @@ results_group_score:"Grp Score",results_final_score:"Final Score",
 results_submissions:"Progress",results_export:"Export CSV",
 results_no_data:"No data yet",results_detail:"Details",results_by_criterion:"By Criterion",
 results_sync_cloud:"Sync from Cloud",results_syncing:"Syncing...",results_sync_done:"Sync complete!",
+results_push_cloud:"Push to Sheets",results_pushing:"Pushing...",results_push_done:"Sheets synced!",
 gas_title:"Cloud Setup Guide",
 deploy_title:"How to Enable Cloud",
 deploy_step1:"Step 1: Google Sheets",deploy_step1_desc:"Create Sheets -> Extensions -> Apps Script.",
@@ -236,7 +238,7 @@ function onOpen() {
 
 function initSheets() {
   const ss = SpreadsheetApp.getActive();
-  ['Roster', 'Criteria', 'Submissions', 'Settings'].forEach(name => {
+  ['Roster', 'Criteria', 'Submissions', 'Settings', 'Results'].forEach(name => {
     if (!ss.getSheetByName(name)) ss.insertSheet(name);
   });
 }
@@ -286,6 +288,27 @@ function doPost(e) {
       
       output.ok = true;
     } 
+    // ─── 新增：推播計算結果至 Results 工作表 ───
+    else if (action === 'push_results') {
+      const sets = ss.getSheetByName('Settings').getDataRange().getValues();
+      let users = [];
+      for(let i=1; i<sets.length; i++) {
+        if(sets[i][0] === 'users') { try { users = JSON.parse(sets[i][1]); } catch(e){} }
+      }
+      const validUser = users.find(u => u.password === data.pw);
+      if (!validUser) throw new Error('驗證失敗，無法匯出');
+
+      let resSheet = ss.getSheetByName('Results');
+      if (!resSheet) resSheet = ss.insertSheet('Results');
+      resSheet.clear();
+      if(data.rows && data.rows.length > 0) {
+        resSheet.getRange(1, 1, data.rows.length, data.rows[0].length).setValues(data.rows);
+        // 幫欄位標題美化一下
+        resSheet.getRange(1, 1, 1, data.rows[0].length).setFontWeight("bold").setBackground("#004030").setFontColor("#ffffff");
+        resSheet.setFrozenRows(1);
+      }
+      output.ok = true;
+    }
     else if (action === 'login') {
       const code = String(data.code).trim();
       const roster = ss.getSheetByName('Roster').getDataRange().getValues();
@@ -300,6 +323,7 @@ function doPost(e) {
       if (!user) throw new Error('Invalid login code (登入碼無效)');
 
       const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
+      // 在新版中，student_id 一樣在 column 0
       for(let i=1; i<subs.length; i++) {
         if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評)');
       }
@@ -331,8 +355,15 @@ function doPost(e) {
     }
     else if (action === 'submit') {
       const sid = String(data.student_id);
+      const grp = String(data.group || ''); // <--- 新增紀錄組別
       const payload = JSON.stringify(data.evaluations);
-      ss.getSheetByName('Submissions').appendRow([sid, payload, new Date().toISOString()]);
+      let sheet = ss.getSheetByName('Submissions');
+      
+      // 如果試算表是空的，加入表頭
+      if (sheet.getLastRow() === 0) {
+        sheet.appendRow(['student_id', 'group', 'evaluations', 'timestamp']);
+      }
+      sheet.appendRow([sid, grp, payload, new Date().toISOString()]);
       output.ok = true;
     }
     // ─── TA / Admin 雲端登入與資料同步 ───
@@ -384,9 +415,30 @@ function doPost(e) {
 
       const subsRaw = ss.getSheetByName('Submissions') ? ss.getSheetByName('Submissions').getDataRange().getValues() : [];
       const submissions = {};
-      for(let i=1; i<subsRaw.length; i++) {
-         if(subsRaw[i][0] && subsRaw[i][1]) {
-            try { submissions[String(subsRaw[i][0])] = JSON.parse(subsRaw[i][1]); } catch(e){}
+      
+      // 動態抓取欄位位置，相容新舊格式
+      let sidIdx = 0, payloadIdx = 1; 
+      let startIdx = 1;
+      if (subsRaw.length > 0) {
+        const headers = subsRaw[0].map(h => String(h).toLowerCase());
+        if (headers.includes('evaluations')) {
+          payloadIdx = headers.indexOf('evaluations');
+          sidIdx = headers.indexOf('student_id');
+          if (sidIdx === -1) sidIdx = 0;
+        } else {
+          // 如果沒有 evaluations 標題，判斷第一行是不是 json
+          const h = String(subsRaw[0][1] || '').toLowerCase();
+          if (h.includes('{')) startIdx = 0; 
+        }
+      }
+
+      for(let i=startIdx; i<subsRaw.length; i++) {
+         const sid = String(subsRaw[i][sidIdx] || '');
+         let pStr = String(subsRaw[i][payloadIdx] || '');
+         if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); // fallback
+         
+         if(sid && pStr.startsWith('{')) {
+            try { submissions[sid] = JSON.parse(pStr); } catch(e){}
          }
       }
 
@@ -508,13 +560,26 @@ const IconMail=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} hei
 
 // ─── Utilities ───
 function generateCode(len=10){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<len;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
-function calibrateRanks(assignments,groupSize){
-  const entries=Object.entries(assignments).sort((a,b)=>a[1]-b[1]);
-  const cal={};let cur=1,i=0;
-  while(i<entries.length){let j=i;while(j<entries.length&&entries[j][1]===entries[i][1])j++;
-    for(let k=i;k<j;k++)cal[entries[k][0]]=cur;cur+=j-i;i=j;}
+
+// ✨ (需求B) 更新校準邏輯：如果多人排名相同，給予平均排名 (例如 4名並列4個位子，校準後為 5.5)
+function calibrateRanks(assignments, groupSize) {
+  const entries = Object.entries(assignments).sort((a, b) => a[1] - b[1]);
+  const cal = {};
+  let cur = 1, i = 0;
+  while (i < entries.length) {
+    let j = i;
+    while (j < entries.length && entries[j][1] === entries[i][1]) j++;
+    const count = j - i;
+    let sum = 0;
+    for (let step = 0; step < count; step++) sum += (cur + step);
+    const avgRank = sum / count;
+    for (let k = i; k < j; k++) cal[entries[k][0]] = avgRank;
+    cur += count;
+    i = j;
+  }
   return cal;
 }
+
 function rankToPercentile(r,n){return n<=1?1:(n-r)/(n-1)}
 function percentileToWeight(p,mn,mx){return mn+p*(mx-mn)}
 function downloadCSV(name,csv){const b=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
@@ -1028,7 +1093,6 @@ const App=()=>{
       setIsSubmitting(true);
       try {
         const res = await apiFetch({ action: 'admin_login', uid, pw });
-        // 驗證成功後，將雲端最新的所有資料覆蓋到本機 (TA登入時也能抓到資料)
         updateStore({
           users: res.users,
           students: res.students,
@@ -1048,7 +1112,6 @@ const App=()=>{
         setIsSubmitting(false);
       }
     } else {
-      // 本機版驗證
       let allUsers = store.users || [];
       if (allUsers.length === 0) {
         allUsers = [{id:'prof',role:'professor',name:'Prof. Lo',password:store.adminPassword||'admin2026'}];
@@ -1067,7 +1130,7 @@ const App=()=>{
     }
   };
 
-  // ─── 學生送出成績 ───
+  // ─── 學生送出成績 (✨ 新增組別回傳) ───
   const handleSubmitEval=()=>{
     const criteriaToUse = isCloudMode ? cloudData.criteria : store.criteria;
     const allDone = criteriaToUse.every(c=>evalRankings[c.id]!==null);
@@ -1079,10 +1142,12 @@ const App=()=>{
     window.__pending=calibrated;
     
     showConfirmDialog(t.eval_confirm_msg, async () => {
+      const submitGroup = isCloudMode ? cloudData.user.group : store.students.find(s=>s.student_id===currentUser)?.group;
+      
       if (isCloudMode) {
         setIsSubmitting(true);
         try {
-          await apiFetch({ action: 'submit', student_id: currentUser, evaluations: window.__pending });
+          await apiFetch({ action: 'submit', student_id: currentUser, group: submitGroup, evaluations: window.__pending });
           setView('success');
         } catch(err) {
           showAlert("Submit failed: " + err.message);
@@ -1105,7 +1170,7 @@ const App=()=>{
       const students = store.students.map(s=>({ ...s, code: store.codes[s.student_id]||'' }));
       await apiFetch({
         action: 'push_setup', students, criteria: store.criteria,
-        users: store.users, // 把 TA 名單一起推上去！
+        users: store.users, 
         adminPw: store.users.find(u=>u.role==='professor')?.password || 'admin2026', 
         assignment: store.assignment, deadline: store.deadline, evalUrl: store.evalUrl
       });
@@ -1238,12 +1303,48 @@ const App=()=>{
     let csv='group,student_id,name_zh,name_en,avg_rank,percentile,weight_factor,group_score,final_score';
     store.criteria.forEach(c=>csv+=`,${c.name_en}_avg`);csv+='\n';
     groupNames.forEach(gn=>{const gr=computeResults[gn];if(!gr)return;
-      Object.values(gr.members).forEach(r=>{
+      Object.values(gr.members).sort((a,b)=>a.avgRank-b.avgRank).forEach(r=>{
         csv+=`${gn},${r.student.student_id},${r.student.name_zh},${r.student.name_en},${r.avgRank},${r.percentile}%,${r.weight},${r.groupScore},${r.finalScore}`;
         store.criteria.forEach(c=>csv+=`,${r.criterionDetail[c.id]}`);csv+='\n';
       });
     });
     downloadCSV('peer_eval_results.csv',csv);
+  };
+
+  // ✨ (需求D) 匯出完整計算結果至 Google Sheets 工作表
+  const handlePushResultsToCloud = async () => {
+    if(!isCloudMode) return;
+    if(!computeResults) return;
+    
+    setSyncStatus('pushing_results');
+    try {
+      const rows = [];
+      const header = ['group', 'student_id', 'name_zh', 'name_en', 'avg_rank', 'percentile', 'weight_factor', 'group_score', 'final_score'];
+      store.criteria.forEach(c => header.push(c.name_en + '_avg'));
+      rows.push(header);
+      
+      groupNames.forEach(gn => {
+        const gr = computeResults[gn];
+        if (!gr) return;
+        Object.values(gr.members).sort((a,b)=>a.avgRank-b.avgRank).forEach(r => {
+          const row = [
+            gn, r.student.student_id, r.student.name_zh, r.student.name_en,
+            r.avgRank, r.percentile + '%', r.weight, r.groupScore || '-', r.finalScore || '-'
+          ];
+          store.criteria.forEach(c => row.push(r.criterionDetail[c.id]));
+          rows.push(row);
+        });
+      });
+
+      const pw = adminPwRef.current?.value || store.users.find(u=>u.role==='professor')?.password || 'admin2026';
+      await apiFetch({ action: 'push_results', pw, rows });
+      setSyncStatus('push_done');
+      setTimeout(()=>setSyncStatus(null), 2000);
+      showAlert(lang === 'zh' ? '結果已成功匯出至 Google Sheets 的 Results 工作表！' : 'Results successfully pushed to Google Sheets!');
+    } catch (err) {
+      showAlert(lang === 'zh' ? '匯出失敗: ' + err.message : 'Export failed: ' + err.message);
+      setSyncStatus(null);
+    }
   };
 
   const inputCls="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] dark:focus:ring-[#D8C3A5] focus:outline-none";
@@ -1599,7 +1700,17 @@ const App=()=>{
 
             {!computeResults?<div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700"><IconBarChart size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-3"/><p className="text-slate-500 text-sm">{t.results_no_data}</p></div>
             :<>
-              <div className="flex justify-end"><button onClick={handleExportResults} className="px-4 py-2 sm:py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-xs sm:text-sm"><IconDownload size={16}/>{t.results_export}</button></div>
+              <div className="flex justify-end gap-2">
+                {isCloudMode && (
+                   <button onClick={handlePushResultsToCloud} disabled={syncStatus==='pushing_results'} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl hover:bg-slate-300 transition flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm shadow-sm disabled:opacity-50">
+                     {syncStatus==='pushing_results' ? <IconSpinner size={14}/> : <IconCloud size={14}/>}
+                     {syncStatus==='pushing_results' ? t.results_pushing : (syncStatus==='push_done' ? t.results_push_done : t.results_push_cloud)}
+                   </button>
+                )}
+                <button onClick={handleExportResults} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm shadow-sm">
+                   <IconDownload size={14}/>{t.results_export}
+                </button>
+              </div>
               {groupNames.map(gName=>{
                 const gr=computeResults[gName];if(!gr)return null;
                 const sorted=Object.values(gr.members).sort((a,b)=>a.avgRank-b.avgRank);
