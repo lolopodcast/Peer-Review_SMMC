@@ -49,7 +49,15 @@ brand:"PEER",title:"同儕互評系統",subtitle:"小組作業公平計分 — �
 login_title:"登入互評",login_code_label:"請輸入您的登入碼",login_code_ph:"貼上您 Email 中收到的登入碼",
 login_btn:"進入互評",login_error:"登入碼無效，請檢查後重試",login_already:"您已完成此次互評，感謝！",
 admin_title:"管理者面板",admin_btn:"管理者模式",admin_pw_label:"管理者密碼",admin_pw_ph:"輸入管理者密碼",
-admin_enter:"進入管理",admin_back:"返回登入",admin_reset:"重設全部資料",admin_reset_confirm:"確定清除所有資料？此操作無法復原。",
+admin_enter:"登入",admin_back:"返回登入",admin_reset:"重設全部資料",admin_reset_confirm:"確定清除所有資料？此操作無法復原。",
+admin_user_label:"帳號",admin_user_ph:"輸入帳號",
+admin_role_prof:"教授",admin_role_ta:"助教",admin_logged_as:"身份",
+admin_tab_ta:"帳號管理",admin_ta_title:"助教帳號管理",admin_ta_add:"新增助教",
+admin_ta_name:"姓名",admin_ta_name_ph:"例：Tina Lin",
+admin_ta_id:"帳號",admin_ta_id_ph:"例：tina",
+admin_ta_pw:"密碼",admin_ta_pw_ph:"設定密碼",
+admin_ta_remove:"移除",admin_ta_remove_confirm:"確定移除此助教帳號？",
+admin_ta_none:"尚未新增助教帳號",admin_ta_prof_note:"教授帳號（不可移除）",
 admin_tab_setup:"設定",admin_tab_results:"結果",admin_tab_codes:"登入碼",admin_tab_gas:"部署 & GAS",
 setup_title:"課程設定",
 setup_upload_roster:"上傳學生名單",
@@ -118,7 +126,15 @@ brand:"PEER",title:"Peer Evaluation System",subtitle:"Fair Group Scoring — Ano
 login_title:"Login to Evaluate",login_code_label:"Enter your login code",login_code_ph:"Paste the code from your email",
 login_btn:"Start Evaluation",login_error:"Invalid code. Please check and try again.",login_already:"You have already submitted. Thank you!",
 admin_title:"Admin Panel",admin_btn:"Admin Mode",admin_pw_label:"Admin Password",admin_pw_ph:"Enter admin password",
-admin_enter:"Enter Admin",admin_back:"Back to Login",admin_reset:"Reset All Data",admin_reset_confirm:"Clear all data? This cannot be undone.",
+admin_enter:"Login",admin_back:"Back to Login",admin_reset:"Reset All Data",admin_reset_confirm:"Clear all data? This cannot be undone.",
+admin_user_label:"Username",admin_user_ph:"Enter username",
+admin_role_prof:"Professor",admin_role_ta:"TA",admin_logged_as:"Role",
+admin_tab_ta:"Accounts",admin_ta_title:"TA Account Management",admin_ta_add:"Add TA",
+admin_ta_name:"Name",admin_ta_name_ph:"e.g., Tina Lin",
+admin_ta_id:"Username",admin_ta_id_ph:"e.g., tina",
+admin_ta_pw:"Password",admin_ta_pw_ph:"Set password",
+admin_ta_remove:"Remove",admin_ta_remove_confirm:"Remove this TA account?",
+admin_ta_none:"No TA accounts yet",admin_ta_prof_note:"Professor account (cannot remove)",
 admin_tab_setup:"Setup",admin_tab_results:"Results",admin_tab_codes:"Codes",admin_tab_gas:"Deploy & GAS",
 setup_title:"Course Setup",
 setup_upload_roster:"Upload Student Roster",
@@ -410,7 +426,7 @@ async function parseRosterFile(file) {
     let currentY = null;
 
     allItems.forEach(item => {
-      if (currentY === null || Math.abs(item.y - currentY) <= 3) {
+      if (currentY === null || Math.abs(item.y - currentY) <= 6) {
         currentLine.push(item);
         if (currentY === null) currentY = item.y;
       } else {
@@ -887,6 +903,8 @@ const App=()=>{
   const[view,setView]=useState('login');
   const[adminTab,setAdminTab]=useState('setup');
   const[adminPw,setAdminPw]=useState('');
+  const[adminRole,setAdminRole]=useState(null); // 'professor' | 'ta'
+  const[adminUser,setAdminUser]=useState(null); // current logged-in user object
   const[loginCode,setLoginCode]=useState('');
   const[loginError,setLoginError]=useState('');
   const[currentUser,setCurrentUser]=useState(null);
@@ -905,13 +923,18 @@ const App=()=>{
     return{
       students:s.students||[],
       criteria:s.criteria||[
-        {id:'c1',name_zh:'貢獻品質',name_en:'Contribution Quality',desc_zh:'對作業成果的實質貢獻程度',desc_en:'Substantive contribution to deliverables'},
-        {id:'c2',name_zh:'參與投入',name_en:'Participation Effort',desc_zh:'出席討論、按時完成分工',desc_en:'Meeting attendance, timely task completion'},
-        {id:'c3',name_zh:'團隊合作',name_en:'Collaboration',desc_zh:'溝通協調、支援隊友、正面態度',desc_en:'Communication, helping teammates, positive attitude'}
+        {id:'ec1',name_zh:'EC1 準備充分程度',name_en:'EC1 Preparation Level',desc_zh:'該組員在每次參與小組討論時，準備充分程度',desc_en:'Preparedness for each group discussion'},
+        {id:'ec2',name_zh:'EC2 切中要點或有創意貢獻',name_en:'EC2 Insight & Creative Contribution',desc_zh:'該組員在每次參與小組討論時，能切中要點或有創意貢獻',desc_en:'Ability to make insightful or creative contributions in discussions'},
+        {id:'ec3',name_zh:'EC3 積極帶領討論或充份合作',name_en:'EC3 Leadership & Collaboration',desc_zh:'該組員在每次參與小組討論時，能積極帶領討論或充份合作',desc_en:'Active leadership in discussions or full collaboration'},
+        {id:'ec4',name_zh:'EC4 書面報告整理與撰寫',name_en:'EC4 Written Report Contribution',desc_zh:'該組員對於書面報告整理與撰寫，能主動且具體貢獻',desc_en:'Proactive and substantive contribution to written report'},
+        {id:'ec5',name_zh:'EC5 團隊士氣或討論氣氛',name_en:'EC5 Team Morale & Atmosphere',desc_zh:'該組員對於團隊士氣或討論氣氛，能正面且顯著提升',desc_en:'Positive and significant uplift of team morale and discussion atmosphere'}
       ],
       codes:s.codes||{},submissions:s.submissions||{},
       weightMin:s.weightMin||0.55,weightMax:s.weightMax||1.45,
       adminPassword:s.adminPassword||'admin2026',
+      users:s.users||[
+        {id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}
+      ],
       assignment:s.assignment||'',
       groupScores:s.groupScores||{},
       deadline:s.deadline||'',
@@ -1095,7 +1118,7 @@ const App=()=>{
   // ─── Header / Footer ───
   const Header=()=>(
     <header className="fixed top-0 left-0 right-0 h-16 z-50 bg-[#004030] flex items-center justify-between px-4 shadow-lg">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 cursor-pointer" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
         <span className="font-serif font-black text-[#D8C3A5] tracking-widest text-xl">{t.brand}</span>
         <span className="text-white/80 text-sm font-sans hidden sm:block">{t.title}</span>
       </div>
@@ -1148,7 +1171,25 @@ const App=()=>{
 
   // ─── ADMIN LOGIN ───
   const AdminLoginView=()=>{
+    const userRef=useRef(null);
     const pwRef=useRef(null);
+    const doLogin=()=>{
+      const uid=(userRef.current?.value||'').trim();
+      const pw=(pwRef.current?.value||'').trim();
+      // Check against all users (professor + TAs)
+      const allUsers=store.users||[];
+      // Also support legacy single-password login (backward compat)
+      const found=allUsers.find(u=>u.id===uid&&u.password===pw);
+      if(found){
+        setAdminRole(found.role);setAdminUser(found);setView('admin');return;
+      }
+      // Fallback: if only password matches professor (no username needed for backward compat)
+      const prof=allUsers.find(u=>u.role==='professor'&&u.password===pw);
+      if(prof&&!uid){
+        setAdminRole('professor');setAdminUser(prof);setView('admin');return;
+      }
+      alert(lang==='zh'?'帳號或密碼錯誤':'Invalid username or password');
+    };
     return(
     <div className="min-h-screen flex items-center justify-center p-4 pt-20">
       <div className="w-full max-w-md animate-fade-in">
@@ -1156,11 +1197,15 @@ const App=()=>{
           <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-6">{t.admin_title}</h2>
           <div className="space-y-4">
             <div>
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.admin_user_label}</label>
+              <input ref={userRef} type="text" defaultValue="" placeholder={t.admin_user_ph} className={inputCls}/>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.admin_pw_label}</label>
-              <input ref={pwRef} type="password" defaultValue="" onKeyDown={e=>{if(e.key==='Enter'){const v=pwRef.current.value;if(v===store.adminPassword)setView('admin');else alert('Wrong password')}}}
+              <input ref={pwRef} type="password" defaultValue="" onKeyDown={e=>{if(e.key==='Enter')doLogin()}}
                 placeholder={t.admin_pw_ph} className={inputCls}/>
             </div>
-            <button onClick={()=>{const v=pwRef.current?.value;if(v===store.adminPassword)setView('admin');else alert('Wrong password')}}
+            <button onClick={doLogin}
               className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition">{t.admin_enter}</button>
             <button onClick={()=>setView('login')} className="w-full py-2 text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
           </div>
@@ -1170,14 +1215,20 @@ const App=()=>{
   )};
 
   // ─── ADMIN VIEW ───
+  const isProf=adminRole==='professor';
   const AdminView=()=>(
     <div className="min-h-screen pt-20 pb-12 px-4">
       <div className="max-w-5xl mx-auto animate-fade-in">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.admin_title}</h1>
           <div className="flex items-center gap-3">
-            <button onClick={()=>{if(confirm(t.admin_reset_confirm))resetStore()}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>
-            <button onClick={()=>setView('login')} className="text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
+            <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.admin_title}</h1>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isProf?'bg-[#004030]/10 text-[#004030] dark:bg-[#D8C3A5]/10 dark:text-[#D8C3A5]':'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+              {isProf?t.admin_role_prof:t.admin_role_ta}{adminUser?' · '+adminUser.name:''}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {isProf&&<button onClick={()=>{if(confirm(t.admin_reset_confirm))resetStore()}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>}
+            <button onClick={()=>{setView('login');setAdminRole(null);setAdminUser(null)}} className="text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
           </div>
         </div>
         {/* Tabs */}
@@ -1185,6 +1236,7 @@ const App=()=>{
           {[{key:'setup',icon:<IconClipboard size={16}/>,label:t.admin_tab_setup},
             {key:'codes',icon:<IconKey size={16}/>,label:t.admin_tab_codes},
             {key:'results',icon:<IconBarChart size={16}/>,label:t.admin_tab_results},
+            ...(isProf?[{key:'ta',icon:<IconUsers size={16}/>,label:t.admin_tab_ta}]:[]),
             {key:'gas',icon:<IconCode size={16}/>,label:t.admin_tab_gas}
           ].map(tab=>(
             <button key={tab.key} onClick={()=>setAdminTab(tab.key)}
@@ -1240,8 +1292,8 @@ const App=()=>{
               </h3>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-slate-400">{t.setup_roster_edit_email}</span>
-                <button onClick={()=>{if(confirm(lang==='zh'?'確定清除名單？':'Clear roster?'))updateStore({students:[],codes:{},submissions:{}})}}
-                  className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>
+                {isProf&&<button onClick={()=>{if(confirm(lang==='zh'?'確定清除學生名單？登入碼與提交記錄也會一併清除，此操作無法復原。':'Clear student roster? Login codes and submissions will also be cleared. This cannot be undone.'))updateStore({students:[],codes:{},submissions:{},groupScores:{}})}}
+                  className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>}
               </div>
             </div>
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -1317,7 +1369,7 @@ const App=()=>{
                 <div key={c.id} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
                   <div className="flex justify-between items-start mb-3">
                     <span className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">#{idx+1}</span>
-                    <button onClick={()=>removeCriterion(c.id)} className="text-red-400 hover:text-red-600 text-xs">{t.setup_remove}</button>
+                    {isProf&&<button onClick={()=>removeCriterion(c.id)} className="text-red-400 hover:text-red-600 text-xs">{t.setup_remove}</button>}
                   </div>
                   <div className="space-y-2">
                     <div>
@@ -1471,6 +1523,64 @@ const App=()=>{
               </div>);
             })}
           </>}
+        </div>}
+
+        {/* ═══ TA MANAGEMENT TAB (professor only) ═══ */}
+        {adminTab==='ta'&&isProf&&<div className="space-y-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-4">{t.admin_ta_title}</h3>
+            
+            {/* Professor account (read-only) */}
+            <div className="p-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-xl mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-full bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] flex items-center justify-center text-xs font-bold">P</span>
+                <div>
+                  <p className="text-sm font-medium text-[#004030] dark:text-[#D8C3A5]">{(store.users.find(u=>u.role==='professor')||{}).name||'Professor'}</p>
+                  <p className="text-xs text-slate-400">ID: {(store.users.find(u=>u.role==='professor')||{}).id||'prof'} · {t.admin_ta_prof_note}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* TA list */}
+            <div className="space-y-2 mb-4">
+              {store.users.filter(u=>u.role==='ta').length===0&&<p className="text-sm text-slate-400 text-center py-4">{t.admin_ta_none}</p>}
+              {store.users.filter(u=>u.role==='ta').map(ta=>(
+                <div key={ta.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl flex items-center justify-between border border-slate-200 dark:border-slate-600">
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">TA</span>
+                    <div>
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{ta.name}</p>
+                      <p className="text-xs text-slate-400">ID: {ta.id}</p>
+                    </div>
+                  </div>
+                  <button onClick={()=>{if(confirm(t.admin_ta_remove_confirm))updateStore({users:store.users.filter(u=>u.id!==ta.id)})}}
+                    className="text-xs text-red-400 hover:text-red-600">{t.admin_ta_remove}</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add TA form */}
+            <div className="p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">{t.admin_ta_add}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input id="ta-name" type="text" placeholder={t.admin_ta_name_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                <input id="ta-id" type="text" placeholder={t.admin_ta_id_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                <input id="ta-pw" type="text" placeholder={t.admin_ta_pw_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+              </div>
+              <button onClick={()=>{
+                const name=document.getElementById('ta-name')?.value?.trim();
+                const id=document.getElementById('ta-id')?.value?.trim();
+                const pw=document.getElementById('ta-pw')?.value?.trim();
+                if(!name||!id||!pw){alert(lang==='zh'?'請填寫完整':'Please fill all fields');return}
+                if(store.users.find(u=>u.id===id)){alert(lang==='zh'?'帳號已存在':'Username already exists');return}
+                updateStore({users:[...store.users,{id,role:'ta',name,password:pw}]});
+                document.getElementById('ta-name').value='';
+                document.getElementById('ta-id').value='';
+                document.getElementById('ta-pw').value='';
+              }}
+                className="mt-3 px-5 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold hover:opacity-90 transition">{t.admin_ta_add}</button>
+            </div>
+          </div>
         </div>}
 
         {/* ═══ DEPLOY & GAS GUIDE TAB ═══ */}
