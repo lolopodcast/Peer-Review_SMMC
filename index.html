@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Peer Evaluation System | 同儕互評系統</title>
+<title>Peer Evaluation System | 同儕互評雲端版</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -17,10 +17,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans-serif'],serif:['Merriweather','serif']}}}}
+
+// =====================================================================
+// ⚠️ 教授/TA 請注意：請將您部署後的 Google Apps Script Web App URL 填入下方引號中
+// 只要填入此網址，系統就會自動啟用「雙向雲端同步模式」
+// =====================================================================
+window.CLOUD_GAS_URL = ""; 
+// 例: "https://script.google.com/macros/s/AKfycb.../exec"
+
 </script>
 <style>
 @keyframes fadeInUp{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}}
 .animate-fade-in{animation:fadeInUp .5s ease-out forwards}
+@keyframes spin{to{transform:rotate(360deg)}}
+.animate-spin{animation:spin 1s linear infinite}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}
 .dark ::-webkit-scrollbar-thumb{background:#475569}
 .rank-slot{min-height:52px;transition:all .2s ease}
@@ -33,14 +43,26 @@ tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans
 .rank-2{background:linear-gradient(135deg,#C0C0C0,#A0A0A0);color:#333}
 .rank-3{background:linear-gradient(135deg,#CD7F32,#B87333);color:#fff}
 .rank-other{background:#e2e8f0;color:#475569}.dark .rank-other{background:#334155;color:#94a3b8}
-.step-connector{position:relative}.step-connector::after{content:'';position:absolute;left:50%;top:100%;width:2px;height:20px;background:#cbd5e1}
-.dark .step-connector::after{background:#475569}
 </style>
 </head>
 <body class="bg-[#f4f4f4] dark:bg-[#121212] min-h-screen">
 <div id="root"></div>
 <script type="text/babel">
 const{useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ─── 雲端連線工具 (Cloud API Wrapper) ───
+const apiFetch = async (payload) => {
+  if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL");
+  const res = await fetch(window.CLOUD_GAS_URL, {
+    method: 'POST',
+    redirect: 'follow', 
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || "API 錯誤");
+  return data;
+};
 
 // ─── Bilingual Dict ───
 const dict={
@@ -58,11 +80,11 @@ admin_ta_id:"帳號",admin_ta_id_ph:"例：tina",
 admin_ta_pw:"密碼",admin_ta_pw_ph:"設定密碼",
 admin_ta_remove:"移除",admin_ta_remove_confirm:"確定移除此助教帳號？",
 admin_ta_none:"尚未新增助教帳號",admin_ta_prof_note:"教授帳號（不可移除）",
-admin_tab_setup:"設定",admin_tab_results:"結果",admin_tab_codes:"登入碼",admin_tab_gas:"部署 & GAS",
+admin_tab_setup:"設定",admin_tab_results:"結果",admin_tab_codes:"登入碼",admin_tab_gas:"部署 & 雲端",
 setup_title:"課程設定",
 setup_upload_roster:"上傳學生名單",
 setup_upload_roster_desc:"支援 CSV、Excel (.xlsx/.xls)、Word (.docx)、PDF",
-setup_csv_format:"欄位需含：學號、系級、中文姓名、英文姓名、組別（順序不拘，欄名模糊辨識；email 可省略，自動產生 s學號@mail1.ncnu.edu.tw；若有 email 欄則以手填為準）",
+setup_csv_format:"欄位需含：學號、系級、中文姓名、英文姓名、組別（順序不拘，欄名模糊辨識）",
 setup_csv_loaded:"已載入 {n} 位學生，{g} 個小組",
 setup_roster_preview:"學生名單預覽",setup_roster_dept:"系級",setup_roster_id:"學號",setup_roster_name_zh:"中文姓名",setup_roster_name_en:"英文姓名",setup_roster_email:"Email",setup_roster_group:"組別",setup_roster_auto:"自動產生",setup_roster_manual:"手動",setup_roster_clear:"清除名單",setup_roster_edit_email:"點擊 Email 可手動修改",
 setup_parsing:"解析中...",setup_parse_error:"解析失敗：{e}",
@@ -79,15 +101,13 @@ setup_assignment:"作業名稱",setup_assignment_ph:"例：期中報告",
 setup_group_score:"小組作業成績（老師給分）",setup_group_score_ph:"例：85",setup_group_score_desc:"互評加權因子 × 此成績 = 個人得分",
 setup_deadline:"截止日期",setup_deadline_ph:"例：2026-04-15",
 setup_eval_url:"互評網頁 URL",setup_eval_url_ph:"部署後的網址",
-setup_gas_url:"GAS Web App URL（選填）",setup_gas_url_ph:"部署 GAS 後取得的 Web App URL",setup_gas_url_desc:"填入後可從 SPA 一鍵推送資料到 Google Sheets",
 codes_title:"登入碼管理",codes_generate:"產生登入碼",
-codes_export_gas:"一鍵複製 GAS 寄信資料",
+codes_export_gas:"一鍵複製寄信資料",
 codes_export_csv:"匯出 CSV",
 codes_copy_done:"已複製到剪貼簿！貼入 Google Sheets 即可",
-codes_push:"推送到 Google Sheets",codes_pushing:"推送中...",codes_push_done:"已推送！請到 Sheets 確認後執行寄信",codes_push_error:"推送失敗：{e}",
+codes_push:"推送到雲端資料庫",codes_pushing:"推送中...",codes_push_done:"推播成功！名單已同步至 Google Sheets",codes_push_error:"推送失敗：{e}",
 codes_status:"狀態",codes_submitted:"已提交",codes_pending:"未提交",
 codes_code:"登入碼",codes_student:"學生",codes_group:"組別",
-codes_send_all:"全部寄出（透過 GAS）",codes_send_remind:"催繳未交者",
 eval_title:"互評作業",eval_criterion:"評分項目",
 eval_instruction:"請將組員拖移至排序欄位（1 = 最佳，數字可並列）",
 eval_pool:"待排序組員",eval_rank:"第 {n} 名",
@@ -101,25 +121,23 @@ results_avg_rank:"平均排序",results_percentile:"百分位",results_weight:"�
 results_group_score:"組別分數",results_final_score:"個人得分",
 results_submissions:"已交 / 總人數",results_export:"匯出結果 CSV",
 results_no_data:"尚無互評資料",results_detail:"明細",results_by_criterion:"各項目排序",
-gas_title:"部署 & Email 設定指南",
-deploy_title:"部署互評網頁（GitHub Pages）",
-deploy_step1:"步驟 1：建立 GitHub Repository",deploy_step1_desc:"到 github.com → New Repository → 名稱例如 peer-eval → 勾選 Public → Create",
-deploy_step2:"步驟 2：上傳 HTML 檔",deploy_step2_desc:"點 uploading an existing file → 把 peer-eval.html 改名為 index.html → 拖入上傳 → Commit",
-deploy_step3:"步驟 3：啟用 GitHub Pages",deploy_step3_desc:"Settings → Pages → Source 選 main branch → Save → 等 1-2 分鐘",
-deploy_step4:"步驟 4：取得 URL",deploy_step4_desc:"頁面會顯示 https://你的帳號.github.io/peer-eval/ → 複製貼入上方「設定」頁的互評網頁 URL",
-email_title:"Email 寄送設定（Google Apps Script）",
-gas_step1:"步驟 1：建立 Google Sheets",gas_step1_desc:"新建一個 Google Sheets，將「登入碼」頁匯出的資料貼入",
-gas_step2:"步驟 2：開啟 Apps Script",gas_step2_desc:"在試算表中點選 Extensions → Apps Script",
-gas_step3:"步驟 3：貼上腳本",gas_step3_desc:"複製下方 GAS 腳本，貼入 Apps Script 編輯器並儲存",
-gas_step4:"步驟 4：修改 CONFIG",gas_step4_desc:"將 EVAL_URL、DEADLINE 等改為您的實際值",
-gas_step5:"步驟 5：授權與執行",gas_step5_desc:"首次執行需授權。點選 sendLoginCodes 寄出登入碼",
-gas_step6:"步驟 6：設定每日催繳",gas_step6_desc:"Triggers → Add Trigger → sendReminders → 每日執行",
-gas_step7:"步驟 7（選）：部署為 Web App",gas_step7_desc:"Deploy → New deployment → Web app → Execute as me → Anyone → Deploy → 複製 URL 貼入 SPA「設定」的 GAS Web App URL → 即可從 SPA 一鍵推送",
+results_sync_cloud:"從雲端同步最新成績",results_syncing:"同步中...",results_sync_done:"雲端成績同步完成！",
+gas_title:"部署 & 雲端設定指南",
+deploy_title:"如何啟用雙向雲端同步",
+deploy_step1:"步驟 1：建立 Google Sheets",deploy_step1_desc:"新建一個 Google Sheets，並開啟 Apps Script (擴充功能 -> Apps Script)。",
+deploy_step2:"步驟 2：貼上並部署 GAS 腳本",deploy_step2_desc:"將下方腳本貼上。點擊右上角「部署」->「新增部署作業」->「網頁應用程式 (Web App)」。",
+deploy_step3:"步驟 3：設定權限",deploy_step3_desc:"執行身分選「我 (Me)」，誰可以存取選「所有人 (Anyone)」。完成後複製 Web App URL。",
+deploy_step4:"步驟 4：將 URL 貼入 HTML",deploy_step4_desc:"用記事本打開這個 index.html 檔案，找到大約第 20 行 window.CLOUD_GAS_URL = \"\";，將網址貼在引號內，存檔後上傳至 GitHub Pages。",
+email_title:"寄送 Email 說明",
+gas_step1:"在雲端模式下，Google Sheets 會自動生成 Roster(名單)、Criteria(標準)、Submissions(成績) 等工作表。",
+gas_step2:"當您在管理者面板點擊「推送到雲端」後，名單與登入碼就會出現在 Roster 工作表。",
+gas_step3:"在 Google Sheets 的上方選單中會出現「📋 Peer Eval」，點擊裡面的「📧 寄出登入碼」即可發信給所有學生。",
 gas_copy_script:"複製 GAS 腳本",gas_copied:"已複製！",
 theme_light:"淺色",theme_dark:"深色",lang_switch:"EN",
 date:"Version 2026.03.28",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
-architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo"
+architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
+cloud_mode_on:"☁️ 雲端模式已啟用",cloud_mode_off:"💻 本機單機模式"
 },
 en:{
 brand:"PEER",title:"Peer Evaluation System",subtitle:"Fair Group Scoring — Anonymous Ranking",
@@ -139,7 +157,7 @@ admin_tab_setup:"Setup",admin_tab_results:"Results",admin_tab_codes:"Codes",admi
 setup_title:"Course Setup",
 setup_upload_roster:"Upload Student Roster",
 setup_upload_roster_desc:"Supports CSV, Excel (.xlsx/.xls), Word (.docx), PDF",
-setup_csv_format:"Columns: student_id, dept, name_zh, name_en, group (any order, fuzzy name matching; email auto-generated as s+id@mail1.ncnu.edu.tw; if email column present, it overrides)",
+setup_csv_format:"Columns: student_id, dept, name_zh, name_en, group (any order, fuzzy name matching)",
 setup_csv_loaded:"Loaded {n} students in {g} groups",
 setup_roster_preview:"Student Roster Preview",setup_roster_dept:"Dept/Year",setup_roster_id:"Student ID",setup_roster_name_zh:"Chinese Name",setup_roster_name_en:"English Name",setup_roster_email:"Email",setup_roster_group:"Group",setup_roster_auto:"auto",setup_roster_manual:"manual",setup_roster_clear:"Clear Roster",setup_roster_edit_email:"Click email to edit manually",
 setup_parsing:"Parsing...",setup_parse_error:"Parse error: {e}",
@@ -156,15 +174,13 @@ setup_assignment:"Assignment Name",setup_assignment_ph:"e.g., Midterm Report",
 setup_group_score:"Group Assignment Score (by instructor)",setup_group_score_ph:"e.g., 85",setup_group_score_desc:"Weight factor × this score = individual score",
 setup_deadline:"Deadline",setup_deadline_ph:"e.g., 2026-04-15",
 setup_eval_url:"Evaluation Page URL",setup_eval_url_ph:"Deployed URL",
-setup_gas_url:"GAS Web App URL (optional)",setup_gas_url_ph:"Web App URL from GAS deployment",setup_gas_url_desc:"Once set, you can push data to Google Sheets directly from SPA",
 codes_title:"Login Code Management",codes_generate:"Generate Codes",
-codes_export_gas:"Copy Data for GAS Email",
+codes_export_gas:"Copy Data for Email",
 codes_export_csv:"Export CSV",
 codes_copy_done:"Copied! Paste into Google Sheets.",
-codes_push:"Push to Google Sheets",codes_pushing:"Pushing...",codes_push_done:"Pushed! Review in Sheets then send emails",codes_push_error:"Push failed: {e}",
+codes_push:"Push Setup to Cloud",codes_pushing:"Pushing...",codes_push_done:"Success! Roster synced to Google Sheets",codes_push_error:"Push failed: {e}",
 codes_status:"Status",codes_submitted:"Submitted",codes_pending:"Pending",
 codes_code:"Code",codes_student:"Student",codes_group:"Group",
-codes_send_all:"Send All (via GAS)",codes_send_remind:"Remind Pending",
 eval_title:"Peer Evaluation",eval_criterion:"Criterion",
 eval_instruction:"Drag members into rank slots (1 = best, ties allowed)",
 eval_pool:"Members to rank",eval_rank:"Rank #{n}",
@@ -178,168 +194,207 @@ results_avg_rank:"Avg Rank",results_percentile:"Percentile",results_weight:"Weig
 results_group_score:"Group Score",results_final_score:"Final Score",
 results_submissions:"Submitted / Total",results_export:"Export Results CSV",
 results_no_data:"No evaluation data yet",results_detail:"Details",results_by_criterion:"Ranking by Criterion",
-gas_title:"Deploy & Email Setup Guide",
-deploy_title:"Deploy Evaluation Page (GitHub Pages)",
-deploy_step1:"Step 1: Create GitHub Repository",deploy_step1_desc:"Go to github.com → New Repository → name e.g. peer-eval → Public → Create",
-deploy_step2:"Step 2: Upload HTML File",deploy_step2_desc:"Click 'uploading an existing file' → rename peer-eval.html to index.html → drag & drop → Commit",
-deploy_step3:"Step 3: Enable GitHub Pages",deploy_step3_desc:"Settings → Pages → Source: main branch → Save → wait 1-2 minutes",
-deploy_step4:"Step 4: Get Your URL",deploy_step4_desc:"Page shows https://username.github.io/peer-eval/ → copy to Setup tab's 'Evaluation Page URL'",
-email_title:"Email Setup (Google Apps Script)",
-gas_step1:"Step 1: Create Google Sheets",gas_step1_desc:"Create a new Google Sheets and paste the exported codes data",
-gas_step2:"Step 2: Open Apps Script",gas_step2_desc:"In the spreadsheet, go to Extensions → Apps Script",
-gas_step3:"Step 3: Paste the Script",gas_step3_desc:"Copy the GAS script below and paste into the Apps Script editor",
-gas_step4:"Step 4: Edit CONFIG",gas_step4_desc:"Update EVAL_URL, DEADLINE, etc. with your actual values",
-gas_step5:"Step 5: Authorize & Run",gas_step5_desc:"First run requires authorization. Run sendLoginCodes to send codes.",
-gas_step6:"Step 6: Set Daily Reminder",gas_step6_desc:"Triggers → Add Trigger → sendReminders → daily",
-gas_step7:"Step 7 (optional): Deploy as Web App",gas_step7_desc:"Deploy → New deployment → Web app → Execute as me → Anyone → Deploy → Copy URL to SPA Setup's 'GAS Web App URL' → enables one-click push from SPA",
+results_sync_cloud:"Sync Latest from Cloud",results_syncing:"Syncing...",results_sync_done:"Cloud sync complete!",
+gas_title:"Deploy & Cloud Setup Guide",
+deploy_title:"How to Enable Cloud Sync",
+deploy_step1:"Step 1: Create Google Sheets",deploy_step1_desc:"Create a new Google Sheets -> Extensions -> Apps Script.",
+deploy_step2:"Step 2: Paste and Deploy",deploy_step2_desc:"Paste the script below. Click Deploy -> New Deployment -> Web App.",
+deploy_step3:"Step 3: Access Permissions",deploy_step3_desc:"Execute as 'Me', Access 'Anyone'. Copy the Web App URL.",
+deploy_step4:"Step 4: Update HTML File",deploy_step4_desc:"Open index.html in a text editor, paste the URL into window.CLOUD_GAS_URL = \"\"; around line 20. Save and upload to GitHub Pages.",
+email_title:"Sending Emails",
+gas_step1:"In Cloud Mode, Google Sheets auto-creates Roster, Criteria, and Submissions sheets.",
+gas_step2:"Click 'Push Setup to Cloud' in the Admin panel to populate the Roster sheet.",
+gas_step3:"In Google Sheets, use the custom menu '📋 Peer Eval' -> '📧 Send Codes' to email all students.",
 gas_copy_script:"Copy GAS Script",gas_copied:"Copied!",
 theme_light:"Light",theme_dark:"Dark",lang_switch:"中",
 date:"Version 2026.03.28",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
-architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo"
+architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
+cloud_mode_on:"☁️ Cloud Mode Active",cloud_mode_off:"💻 Local Mode"
 }
 };
 
-// ─── GAS Script Template ───
+// ─── 新版 GAS 雙向雲端腳本 (REST API) ───
 const GAS_SCRIPT = `/**
- * Peer Evaluation — Google Apps Script
- * 同儕互評登入碼寄送 & 催繳自動通知
- * * Sheet 欄位：student_id | name_zh | name_en | email | group | code | status
+ * Peer Evaluation System — Cloud Backend
+ * 雙向雲端資料庫與發信系統
  */
-
-const CONFIG = {
-  SHEET_NAME: 'Sheet1',
-  EVAL_URL: '{{EVAL_URL}}',
-  SENDER_NAME: '{{COURSE}} Peer Evaluation',
-  ASSIGNMENT_NAME: '{{ASSIGNMENT}}',
-  DEADLINE: '{{DEADLINE}}',
-  COURSE_NAME: '{{COURSE}}',
-  PROF_NAME: 'Prof. Shihmin Lo',
-  COL: { STUDENT_ID:0, NAME_ZH:1, NAME_EN:2, EMAIL:3, GROUP:4, CODE:5, STATUS:6 }
-};
-
-function sendLoginCodes() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const data = sheet.getDataRange().getValues();
-  const C = CONFIG.COL;
-  let sent = 0;
-  const errors = [];
-  const skipped = [];
-  Logger.log('Total rows (incl header): ' + data.length);
-  Logger.log('First data row: ' + JSON.stringify(data[1]));
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const email = String(row[C.EMAIL] || '').trim();
-    const code = String(row[C.CODE] || '').trim();
-    const nzh = String(row[C.NAME_ZH] || '').trim();
-    const nen = String(row[C.NAME_EN] || '').trim();
-    const grp = String(row[C.GROUP] || '').trim();
-    if (!email || !code) { skipped.push('Row ' + (i+1) + ': email=' + email + ' code=' + code); continue; }
-    const subject = '[' + CONFIG.COURSE_NAME + '] 同儕互評登入碼 Peer Evaluation Login Code';
-    const html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">'
-      + '<div style="background:#004030;color:#D8C3A5;padding:20px 24px;border-radius:12px 12px 0 0">'
-      + '<h1 style="margin:0;font-size:20px">' + CONFIG.COURSE_NAME + ' — 同儕互評 Peer Evaluation</h1></div>'
-      + '<div style="background:#fff;padding:24px;border:1px solid #e2e8f0;border-top:none">'
-      + '<p>' + nzh + ' (' + nen + ') 同學您好，<br>Hi ' + nen + ',</p>'
-      + '<p>請使用下方登入碼完成 <b>' + CONFIG.ASSIGNMENT_NAME + '</b> 的同儕互評。<br>'
-      + '<span style="color:#64748b">Please use the code below for peer evaluation of <b>' + CONFIG.ASSIGNMENT_NAME + '</b>.</span></p>'
-      + '<div style="background:#f8fafc;border:2px solid #004030;border-radius:12px;padding:20px;text-align:center;margin:20px 0">'
-      + '<p style="margin:0 0 8px;color:#64748b;font-size:12px;letter-spacing:2px">LOGIN CODE 登入碼</p>'
-      + '<p style="margin:0;font-family:Courier New,monospace;font-size:28px;font-weight:bold;color:#004030;letter-spacing:4px">' + code + '</p></div>'
-      + '<p>組別 Group: <b>' + grp + '</b><br>截止 Deadline: <b>' + CONFIG.DEADLINE + '</b></p>'
-      + '<a href="' + CONFIG.EVAL_URL + '" style="display:inline-block;background:#004030;color:#D8C3A5;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold">前往互評 Enter →</a>'
-      + '<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">'
-      + '<p style="color:#94a3b8;font-size:12px">⚠️ 此碼僅限您本人使用，互評採匿名制。This code is personal. Evaluations are anonymous.</p>'
-      + '</div></div>';
-    try { MailApp.sendEmail({to:email,subject:subject,htmlBody:html,name:CONFIG.SENDER_NAME}); sent++; Utilities.sleep(500); }
-    catch(e) { errors.push('Row ' + (i+1) + ' ' + email + ': ' + e.message); Logger.log('FAILED Row ' + (i+1) + ' ' + email + ': ' + e.message); }
-  }
-  let report = '✅ 成功寄出 ' + sent + ' 封 / ' + sent + ' sent';
-  if (skipped.length > 0) report += '\\n\\n⚠️ 跳過 ' + skipped.length + ' 筆 (缺 email 或 code):\\n' + skipped.join('\\n');
-  if (errors.length > 0) report += '\\n\\n❌ 失敗 ' + errors.length + ' 筆:\\n' + errors.join('\\n');
-  Logger.log(report);
-  SpreadsheetApp.getUi().alert(report);
-}
-
-function sendReminders() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const data = sheet.getDataRange().getValues();
-  const C = CONFIG.COL;
-  let sent = 0;
-  const errors = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const email = String(row[C.EMAIL] || '').trim();
-    const code = String(row[C.CODE] || '').trim();
-    const nzh = String(row[C.NAME_ZH] || '').trim();
-    const nen = String(row[C.NAME_EN] || '').trim();
-    const status = String(row[C.STATUS] || '').toLowerCase();
-    if (!email || !code || status === 'submitted') continue;
-    const subject = '[提醒 Reminder] ' + CONFIG.COURSE_NAME + ' 同儕互評未完成';
-    const html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">'
-      + '<div style="background:#b45309;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0">'
-      + '<h1 style="margin:0;font-size:20px">⏰ 互評尚未完成 Evaluation Pending</h1></div>'
-      + '<div style="background:#fff;padding:24px;border:1px solid #e2e8f0;border-top:none">'
-      + '<p>' + nzh + ' (' + nen + ') 同學，</p>'
-      + '<p>系統偵測到您尚未完成 <b>' + CONFIG.ASSIGNMENT_NAME + '</b> 的互評。<br>'
-      + '<span style="color:#64748b">You have not yet completed peer evaluation for <b>' + CONFIG.ASSIGNMENT_NAME + '</b>.</span></p>'
-      + '<p style="color:#dc2626;font-weight:bold">截止 Deadline: ' + CONFIG.DEADLINE + '</p>'
-      + '<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:16px;margin:16px 0">'
-      + '<p style="margin:0;color:#92400e;font-size:13px">登入碼 Code: <b style="font-family:monospace;font-size:16px;letter-spacing:2px">' + code + '</b></p></div>'
-      + '<a href="' + CONFIG.EVAL_URL + '" style="display:inline-block;background:#b45309;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold">立即填寫 Complete Now →</a>'
-      + '</div></div>';
-    try { MailApp.sendEmail({to:email,subject:subject,htmlBody:html,name:CONFIG.SENDER_NAME}); sent++; Utilities.sleep(500); }
-    catch(e) { errors.push('Row ' + (i+1) + ' ' + email + ': ' + e.message); Logger.log('Reminder FAILED: ' + email + ': ' + e.message); }
-  }
-  let report = '✅ 催繳寄出 ' + sent + ' 封 / ' + sent + ' reminders sent';
-  if (errors.length > 0) report += '\\n\\n❌ 失敗 ' + errors.length + ' 筆:\\n' + errors.join('\\n');
-  Logger.log(report);
-}
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('📋 Peer Eval')
     .addItem('📧 寄出登入碼 Send Codes', 'sendLoginCodes')
-    .addItem('⏰ 催繳通知 Send Reminders', 'sendReminders')
+    .addItem('⏰ 催繳未交者 Send Reminders', 'sendReminders')
     .addToUi();
 }
 
+function initSheets() {
+  const ss = SpreadsheetApp.getActive();
+  ['Roster', 'Criteria', 'Submissions', 'Settings'].forEach(name => {
+    if (!ss.getSheetByName(name)) ss.insertSheet(name);
+  });
+}
+
 function doPost(e) {
+  initSheets();
+  const ss = SpreadsheetApp.getActive();
+  const output = { ok: false };
+
   try {
     const data = JSON.parse(e.postData.contents);
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-    
-    if (data.action === 'push_codes') {
-      sheet.clearContents();
-      sheet.getRange(1,1,1,7).setValues([['student_id','name_zh','name_en','email','group','code','status']]);
-      const rows = data.students.map(s => [s.student_id, s.name_zh, s.name_en, s.email, s.group, s.code, s.status]);
-      if (rows.length > 0) {
-        sheet.getRange(2,1,rows.length,7).setValues(rows);
+    const action = data.action;
+
+    if (action === 'push_setup') {
+      const rSheet = ss.getSheetByName('Roster');
+      rSheet.clear();
+      rSheet.appendRow(['student_id', 'name_zh', 'name_en', 'email', 'group', 'code']);
+      data.students.forEach(s => rSheet.appendRow([s.student_id, s.name_zh, s.name_en, s.email, s.group, s.code]));
+
+      const cSheet = ss.getSheetByName('Criteria');
+      cSheet.clear();
+      cSheet.appendRow(['id', 'name_zh', 'name_en', 'desc_zh', 'desc_en']);
+      data.criteria.forEach(c => cSheet.appendRow([c.id, c.name_zh, c.name_en, c.desc_zh, c.desc_en]));
+
+      const sSheet = ss.getSheetByName('Settings');
+      sSheet.clear();
+      sSheet.appendRow(['key', 'value']);
+      sSheet.appendRow(['admin_pw', data.adminPw || 'admin2026']);
+      sSheet.appendRow(['assignment', data.assignment || '']);
+      sSheet.appendRow(['deadline', data.deadline || '']);
+      sSheet.appendRow(['eval_url', data.evalUrl || '']);
+      
+      output.ok = true;
+    } 
+    else if (action === 'login') {
+      const code = String(data.code).trim();
+      const roster = ss.getSheetByName('Roster').getDataRange().getValues();
+      let user = null;
+      
+      for(let i=1; i<roster.length; i++) {
+        if(String(roster[i][5]).trim() === code) {
+          user = { student_id: String(roster[i][0]), name_zh: roster[i][1], name_en: roster[i][2], group: roster[i][4] };
+          break;
+        }
       }
-      MailApp.sendEmail({
-        to: data.adminEmail || Session.getActiveUser().getEmail(),
-        subject: '[Peer Eval] 資料已寫入 Data received — 待確認寄出',
-        htmlBody: '<p>' + rows.length + ' 位學生的登入碼已寫入 Google Sheets。</p>'
-          + '<p>' + rows.length + ' student codes written to Google Sheets.</p>'
-          + '<p>請到 Google Sheets 確認後執行 📋 Peer Eval → 📧 寄出登入碼</p>'
-          + '<p>Please review in Google Sheets, then run 📋 Peer Eval → 📧 Send Codes</p>'
-      });
-      return ContentService.createTextOutput(JSON.stringify({ok:true, count:rows.length}))
-        .setMimeType(ContentService.MimeType.JSON);
+      if (!user) throw new Error('Invalid login code (登入碼無效)');
+
+      const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
+      for(let i=1; i<subs.length; i++) {
+        if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評)');
+      }
+
+      const groupMembers = [];
+      for(let i=1; i<roster.length; i++) {
+        if(String(roster[i][4]) === String(user.group)) {
+          groupMembers.push({ student_id: String(roster[i][0]), name_zh: roster[i][1], name_en: roster[i][2], group: roster[i][4] });
+        }
+      }
+
+      const crits = ss.getSheetByName('Criteria').getDataRange().getValues();
+      const criteria = [];
+      for(let i=1; i<crits.length; i++) {
+        criteria.push({ id: crits[i][0], name_zh: crits[i][1], name_en: crits[i][2], desc_zh: crits[i][3], desc_en: crits[i][4] });
+      }
+
+      const sets = ss.getSheetByName('Settings').getDataRange().getValues();
+      let assignment = '';
+      for(let i=1; i<sets.length; i++) {
+        if(sets[i][0] === 'assignment') assignment = sets[i][1];
+      }
+
+      output.ok = true;
+      output.user = user;
+      output.groupMembers = groupMembers;
+      output.criteria = criteria;
+      output.assignment = assignment;
     }
-    
-    if (data.action === 'send_codes') {
-      sendLoginCodes();
-      return ContentService.createTextOutput(JSON.stringify({ok:true, action:'sent'}))
-        .setMimeType(ContentService.MimeType.JSON);
+    else if (action === 'submit') {
+      const sid = String(data.student_id);
+      const payload = JSON.stringify(data.evaluations);
+      ss.getSheetByName('Submissions').appendRow([sid, payload, new Date().toISOString()]);
+      output.ok = true;
     }
-    
-    return ContentService.createTextOutput(JSON.stringify({ok:false, error:'Unknown action'}))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({ok:false, error:err.message}))
-      .setMimeType(ContentService.MimeType.JSON);
+    else if (action === 'admin_fetch') {
+      const sets = ss.getSheetByName('Settings').getDataRange().getValues();
+      let realPw = 'admin2026';
+      for(let i=1; i<sets.length; i++) {
+        if(sets[i][0] === 'admin_pw') realPw = sets[i][1];
+      }
+      if (data.pw !== realPw) throw new Error('Unauthorized');
+
+      const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
+      const submissions = {};
+      for(let i=1; i<subs.length; i++) {
+        if(subs[i][0] && subs[i][1]) {
+          try { submissions[String(subs[i][0])] = JSON.parse(subs[i][1]); } catch(e){}
+        }
+      }
+      output.ok = true;
+      output.submissions = submissions;
+    }
+  } catch (err) {
+    output.ok = false;
+    output.error = err.message;
   }
-}`;
+  return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getSetting(key) {
+  const sets = SpreadsheetApp.getActive().getSheetByName('Settings').getDataRange().getValues();
+  for(let i=1; i<sets.length; i++) { if(sets[i][0] === key) return sets[i][1]; }
+  return '';
+}
+
+function sendLoginCodes() {
+  const ss = SpreadsheetApp.getActive();
+  const roster = ss.getSheetByName('Roster').getDataRange().getValues();
+  const assign = getSetting('assignment');
+  const deadline = getSetting('deadline');
+  const evalUrl = getSetting('eval_url');
+  
+  let sent = 0;
+  for (let i = 1; i < roster.length; i++) {
+    const email = String(roster[i][3]).trim();
+    const code = String(roster[i][5]).trim();
+    if (!email || !code) continue;
+    
+    const subject = '[Peer Eval] 同儕互評登入碼 Login Code';
+    const html = '<div style="font-family:sans-serif;padding:20px">'
+      + '<h2>同儕互評 Peer Evaluation</h2>'
+      + '<p>同學您好：<br>請使用下方登入碼完成 <b>' + assign + '</b> 的同儕互評。</p>'
+      + '<div style="background:#f0fdf4;border:2px solid #166534;padding:15px;text-align:center;font-size:24px;font-weight:bold;letter-spacing:2px;margin:20px 0;">' + code + '</div>'
+      + '<p>截止期限 Deadline: ' + deadline + '</p>'
+      + '<a href="' + evalUrl + '" style="background:#166534;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">前往互評 Enter -></a>'
+      + '</div>';
+    
+    try { MailApp.sendEmail({to: email, subject: subject, htmlBody: html}); sent++; Utilities.sleep(300); } catch(e) {}
+  }
+  SpreadsheetApp.getUi().alert('成功寄出 ' + sent + ' 封信。');
+}
+
+function sendReminders() {
+  const ss = SpreadsheetApp.getActive();
+  const roster = ss.getSheetByName('Roster').getDataRange().getValues();
+  const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
+  const assign = getSetting('assignment');
+  const evalUrl = getSetting('eval_url');
+  
+  const subMap = new Set();
+  for(let i=1; i<subs.length; i++) subMap.add(String(subs[i][0]));
+
+  let sent = 0;
+  for (let i = 1; i < roster.length; i++) {
+    const sid = String(roster[i][0]);
+    const email = String(roster[i][3]).trim();
+    const code = String(roster[i][5]).trim();
+    if (!email || !code || subMap.has(sid)) continue;
+    
+    const subject = '[提醒 Reminder] 互評尚未完成 Evaluation Pending';
+    const html = '<div style="font-family:sans-serif;padding:20px"><h2>⏰ 互評尚未完成</h2><p>您尚未完成 <b>' + assign + '</b> 的同儕互評，您的登入碼為 <b>' + code + '</b>，請盡快至系統填寫：</p><p><a href="' + evalUrl + '">點此進入系統</a></p></div>';
+    try { MailApp.sendEmail({to: email, subject: subject, htmlBody: html}); sent++; Utilities.sleep(300); } catch(e) {}
+  }
+  SpreadsheetApp.getUi().alert('成功寄出催繳 ' + sent + ' 封信。');
+}
+`;
 
 // ─── Icons ───
 const Icon=({d,size=20,className=""})=><svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d={d}/></svg>;
@@ -358,10 +413,11 @@ const IconKey=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} heig
 const IconCopy=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
 const IconCode=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
 const IconFile=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
+const IconCloud=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M17.5 19A5.5 5.5 0 0 0 18 8h-1.26A8 8 0 1 0 3 16.3"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg>;
+const IconSpinner=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`animate-spin ${p.className||""}`}><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>;
 
 // ─── Utilities ───
 function generateCode(len=10){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<len;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
-
 function calibrateRanks(assignments,groupSize){
   const entries=Object.entries(assignments).sort((a,b)=>a[1]-b[1]);
   const cal={};let cur=1,i=0;
@@ -379,13 +435,14 @@ function saveStore(d){localStorage.setItem(STORE_KEY,JSON.stringify(d))}
 function resetStore(){localStorage.removeItem(STORE_KEY);location.reload()}
 
 // ─── Multi-format file parser ───
+const EMAIL_DOMAIN = '@mail1.ncnu.edu.tw';
+function autoEmail(sid) { return 's' + String(sid).replace(/^s/i,'') + EMAIL_DOMAIN; }
+
 async function parseRosterFile(file) {
   const name = file.name.toLowerCase();
   const ext = name.split('.').pop();
-
   if (ext === 'csv' || ext === 'tsv') {
-    const text = await file.text();
-    return parseCSVText(text, ext === 'tsv' ? '\t' : ',');
+    return parseCSVText(await file.text(), ext === 'tsv' ? '\t' : ',');
   }
   if (ext === 'xlsx' || ext === 'xls') {
     const buf = await file.arrayBuffer();
@@ -415,7 +472,6 @@ async function parseRosterFile(file) {
     const lines = [];
     let currentLine = [];
     let currentY = null;
-
     allItems.forEach(item => {
       if (currentY === null || Math.abs(item.y - currentY) <= 6) {
         currentLine.push(item);
@@ -439,7 +495,7 @@ async function parseRosterFile(file) {
     const text = await file.text();
     return parseTextToRoster(text);
   }
-  throw new Error('Unsupported format: ' + ext);
+  throw new Error('不支援的檔案格式：' + ext);
 }
 
 function parseCSVText(text, sep=',') {
@@ -455,9 +511,6 @@ function parseCSVText(text, sep=',') {
   }
   return normalizeRows(rows);
 }
-
-const EMAIL_DOMAIN = '@mail1.ncnu.edu.tw';
-function autoEmail(sid) { return 's' + String(sid).replace(/^s/i,'') + EMAIL_DOMAIN; }
 
 function normalizeRows(rows) {
   const colDefs = {
@@ -619,18 +672,7 @@ async function extractCriteriaFromFile(file) {
 
   const criteria = extractCriteriaLocal(text);
   if (criteria.length > 0) return criteria;
-
-  try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 1000,
-        messages: [{ role: "user", content: `Extract peer evaluation rubric criteria from this document. Return ONLY valid JSON array, no markdown backticks. Format: [{"name_zh":"中文名","name_en":"English Name","desc_zh":"中文說明","desc_en":"English description"}]\n\nDocument:\n${text.substring(0, 4000)}` }]
-      })
-    });
-    const data = await resp.json();
-    return JSON.parse((data.content?.map(c => c.text || '').join('') || '[]').replace(/```json|```/g, '').trim());
-  } catch(e) { return []; }
+  return [];
 }
 
 function extractCriteriaLocal(text) {
@@ -664,6 +706,7 @@ function extractCriteriaLocal(text) {
   }
   return [];
 }
+
 
 // ─── RankingBoard Component ───
 const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=>{
@@ -762,16 +805,25 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
 
 // ─── Main App ───
 const App=()=>{
+  const isCloudMode = Boolean(window.CLOUD_GAS_URL && window.CLOUD_GAS_URL.trim() !== "");
+  
   // Top-level State
   const[lang,setLang]=useState('zh');
   const[dark,setDark]=useState(false);
   const[view,setView]=useState('login');
   const[adminTab,setAdminTab]=useState('setup');
-  const[adminRole,setAdminRole]=useState(null); // 'professor' | 'ta'
+  const[adminRole,setAdminRole]=useState(null); 
   const[adminUser,setAdminUser]=useState(null); 
-  const[loginError,setLoginError]=useState('');
+  const[isSubmitting,setIsSubmitting]=useState(false);
+  
+  // Custom Global Dialog State (代替原生的 alert 與 confirm)
+  const[dialog, setDialog] = useState(null);
+  const showAlert = useCallback((msg) => setDialog({ type: 'alert', msg }), []);
+  const showConfirmDialog = useCallback((msg, onConfirm) => setDialog({ type: 'confirm', msg, onConfirm }), []);
+  
   const[currentUser,setCurrentUser]=useState(null);
-  const[showConfirm,setShowConfirm]=useState(false);
+  const[cloudData,setCloudData]=useState(null); 
+
   const[savedMsg,setSavedMsg]=useState('');
   const[detailGroup,setDetailGroup]=useState(null);
   const[parsing,setParsing]=useState(false);
@@ -780,6 +832,7 @@ const App=()=>{
   const[gasCopied,setGasCopied]=useState(false);
   const[codeCopied,setCodeCopied]=useState(false);
   const[pushStatus,setPushStatus]=useState(null);
+  const[syncStatus,setSyncStatus]=useState(null);
 
   const[store,setStoreState]=useState(()=>{
     const s=loadStore();
@@ -799,8 +852,7 @@ const App=()=>{
       assignment:s.assignment||'',
       groupScores:s.groupScores||{},
       deadline:s.deadline||'',
-      evalUrl:s.evalUrl||'https://lolopodcast.github.io/Peer-Review/',
-      gasUrl:s.gasUrl||''
+      evalUrl:s.evalUrl||'https://lolopodcast.github.io/Peer-Review/'
     };
   });
 
@@ -815,7 +867,6 @@ const App=()=>{
   const[evalRankings,setEvalRankings]=useState({});
   const handleRankingChange=useCallback((cid,r)=>{setEvalRankings(p=>({...p,[cid]:r}))},[]);
 
-  // Refs for Login to avoid unmount/remount state wipe issues
   const studentCodeRef = useRef(null);
   const adminUserRef = useRef(null);
   const adminPwRef = useRef(null);
@@ -823,48 +874,117 @@ const App=()=>{
   const newTaIdRef = useRef(null);
   const newTaPwRef = useRef(null);
 
-  // ─── Login Handlers ───
-  const doStudentLogin=()=>{
+  // ─── 學生登入 (雲端優先，退回本機) ───
+  const doStudentLogin=async()=>{
     const code = (studentCodeRef.current?.value || '').trim();
-    const sid = Object.keys(store.codes).find(k => store.codes[k] === code);
-    if(!sid){setLoginError(t.login_error);return}
-    if(store.submissions[sid]){setLoginError(t.login_already);return}
-    setCurrentUser(sid);
-    setLoginError('');
-    const init={};store.criteria.forEach(c=>{init[c.id]=null});
-    setEvalRankings(init);
-    setView('eval');
+    if(!code) return;
+
+    if (isCloudMode) {
+      setIsSubmitting(true);
+      try {
+        const data = await apiFetch({ action: 'login', code });
+        setCloudData(data);
+        setCurrentUser(data.user.student_id);
+        const init={}; data.criteria.forEach(c=>{init[c.id]=null});
+        setEvalRankings(init);
+        setView('eval');
+      } catch(err) {
+        showAlert(err.message);
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      const sid = Object.keys(store.codes).find(k => store.codes[k] === code);
+      if(!sid){showAlert(t.login_error);return}
+      if(store.submissions[sid]){showAlert(t.login_already);return}
+      setCurrentUser(sid);
+      const init={};store.criteria.forEach(c=>{init[c.id]=null});
+      setEvalRankings(init); setView('eval');
+    }
   };
 
   const doAdminLogin=()=>{
     const uid = (adminUserRef.current?.value || '').trim();
     const pw = (adminPwRef.current?.value || '').trim();
     let allUsers = store.users || [];
-    
-    // Fallback safeguard in case store.users is entirely missing
     if (allUsers.length === 0) {
       allUsers = [{id:'prof',role:'professor',name:'Prof. Lo',password:store.adminPassword||'admin2026'}];
       updateStore({users:allUsers});
     }
 
-    // Exact Match
     const found = allUsers.find(u => u.id === uid && u.password === pw);
-    if (found) {
-      setAdminRole(found.role); setAdminUser(found); setView('admin'); return;
-    }
+    if (found) { setAdminRole(found.role); setAdminUser(found); setView('admin'); return; }
 
-    // Legacy / Convenience Professor Match (Allows blank ID if password is correct)
     const prof = allUsers.find(u => u.role === 'professor' && u.password === pw);
-    if (prof && (!uid || uid === prof.id)) {
-      setAdminRole('professor'); setAdminUser(prof); setView('admin'); return;
-    }
+    if (prof && (!uid || uid === prof.id)) { setAdminRole('professor'); setAdminUser(prof); setView('admin'); return; }
 
-    // Ultimate fallback if JSON data was corrupted
     if ((!uid || uid === 'prof') && pw === (store.adminPassword || 'admin2026')) {
       setAdminRole('professor'); setAdminUser({id:'prof',role:'professor',name:'Prof. Lo'}); setView('admin'); return;
     }
 
-    alert(lang==='zh' ? '帳號或密碼錯誤' : 'Invalid username or password');
+    showAlert(lang==='zh' ? '帳號或密碼錯誤' : 'Invalid username or password');
+  };
+
+  // ─── 學生送出成績 ───
+  const handleSubmitEval=()=>{
+    const criteriaToUse = isCloudMode ? cloudData.criteria : store.criteria;
+    const allDone = criteriaToUse.every(c=>evalRankings[c.id]!==null);
+    if(!allDone){showAlert(t.eval_incomplete);return}
+    
+    const gmLength = isCloudMode ? cloudData.groupMembers.length : (groups[store.students.find(s=>s.student_id===currentUser)?.group]?.length || 0);
+    const calibrated={};
+    criteriaToUse.forEach(c=>{calibrated[c.id]=calibrateRanks(evalRankings[c.id], gmLength)});
+    window.__pending=calibrated;
+    
+    showConfirmDialog(t.eval_confirm_msg, async () => {
+      if (isCloudMode) {
+        setIsSubmitting(true);
+        try {
+          await apiFetch({ action: 'submit', student_id: currentUser, evaluations: window.__pending });
+          setView('success');
+        } catch(err) {
+          showAlert("Submit failed: " + err.message);
+        } finally {
+          setIsSubmitting(false);
+        }
+      } else {
+        updateStore({submissions:{...store.submissions,[currentUser]:window.__pending}});
+        setView('success');
+      }
+    });
+  };
+
+  // ─── 管理者雲端推播 ───
+  const handlePushToCloud=async()=>{
+    if(!isCloudMode){showAlert(lang==='zh'?'請先填寫 GAS URL 以啟用雲端模式':'Please configure GAS URL to enable cloud mode');return}
+    if(Object.keys(store.codes).length === 0){showAlert(lang==='zh'?'請先產生登入碼':'Please generate codes first');return}
+    setPushStatus('pushing');
+    try{
+      const students = store.students.map(s=>({ ...s, code: store.codes[s.student_id]||'' }));
+      await apiFetch({
+        action: 'push_setup', students, criteria: store.criteria,
+        adminPw: store.users.find(u=>u.role==='professor')?.password || 'admin2026', 
+        assignment: store.assignment, deadline: store.deadline, evalUrl: store.evalUrl
+      });
+      setPushStatus('done'); setTimeout(()=>setPushStatus(null), 5000);
+    }catch(err){
+      setPushStatus('error:'+err.message); setTimeout(()=>setPushStatus(null), 5000);
+    }
+  };
+
+  // ─── 管理者雲端同步 ───
+  const handleSyncFromCloud=async()=>{
+    if(!isCloudMode) return;
+    setSyncStatus('syncing');
+    try {
+      const pw = adminPwRef.current?.value || store.users.find(u=>u.role==='professor')?.password || 'admin2026';
+      const data = await apiFetch({ action: 'admin_fetch', pw });
+      updateStore({ submissions: { ...store.submissions, ...data.submissions } });
+      setSyncStatus('done'); setTimeout(()=>setSyncStatus(null), 3000);
+    } catch(err) {
+      showAlert("Sync failed: " + err.message);
+      setSyncStatus(null);
+    }
   };
 
   // ─── Shared UI Handlers ───
@@ -878,8 +998,7 @@ const App=()=>{
       const gs = {...store.groupScores};
       newGroups.forEach(g => { if(!gs[g]) gs[g] = '1'; });
       updateStore({students, groupScores: gs});
-      const gn=new Set(students.map(s=>s.group)).size;
-      setParseMsg({ok:true,n:students.length,g:gn});
+      setParseMsg({ok:true,n:students.length,g:newGroups.length});
     }catch(err){setParseMsg({ok:false,e:err.message})}
     finally{setParsing(false)}
   };
@@ -897,23 +1016,12 @@ const App=()=>{
     finally{setCriteriaImporting(false);e.target.value=''}
   };
 
-  const handleSubmitEval=()=>{
-    const allDone=store.criteria.every(c=>evalRankings[c.id]!==null);
-    if(!allDone){alert(t.eval_incomplete);return}
-    const ug=store.students.find(s=>s.student_id===currentUser)?.group;
-    const gm=groups[ug]||[];
-    const calibrated={};
-    store.criteria.forEach(c=>{calibrated[c.id]=calibrateRanks(evalRankings[c.id],gm.length)});
-    window.__pending=calibrated;setShowConfirm(true);
-  };
-
-  const confirmSubmit=()=>{
-    updateStore({submissions:{...store.submissions,[currentUser]:window.__pending}});
-    setShowConfirm(false);setView('success');
-  };
+  const addCriterion=()=>{updateStore({criteria:[...store.criteria,{id:'c'+Date.now(),name_zh:'',name_en:'',desc_zh:'',desc_en:''}]})};
+  const removeCriterion=id=>{updateStore({criteria:store.criteria.filter(c=>c.id!==id)})};
+  const updateCriterion=(id,f,v)=>{updateStore({criteria:store.criteria.map(c=>c.id===id?{...c,[f]:v}:c)})};
 
   const handleGenerateCodes=()=>{const codes={};store.students.forEach(s=>{codes[s.student_id]=generateCode(10)});updateStore({codes})};
-
+  
   const handleCopyCodesForGAS=()=>{
     let tsv='student_id\tname_zh\tname_en\temail\tgroup\tcode\tstatus\n';
     store.students.forEach(s=>{
@@ -922,45 +1030,6 @@ const App=()=>{
       tsv+=`${s.student_id}\t${s.name_zh}\t${s.name_en}\t${s.email}\t${s.group}\t${code}\t${status}\n`;
     });
     navigator.clipboard.writeText(tsv).then(()=>{setCodeCopied(true);setTimeout(()=>setCodeCopied(false),2000)});
-  };
-
-  const handleExportCSV=()=>{
-    let csv='student_id,name_zh,name_en,email,group,code,status\n';
-    store.students.forEach(s=>{
-      const code=store.codes[s.student_id]||'';
-      const status=store.submissions[s.student_id]?'submitted':'pending';
-      csv+=`${s.student_id},${s.name_zh},${s.name_en},${s.email},${s.group},${code},${status}\n`;
-    });
-    downloadCSV('peer_eval_codes.csv',csv);
-  };
-
-  const handlePushToSheets=async()=>{
-    if(!store.gasUrl){alert(lang==='zh'?'請先在「設定」填入 GAS Web App URL':'Please set GAS Web App URL in Setup first');return}
-    if(!Object.keys(store.codes).length){alert(lang==='zh'?'請先產生登入碼':'Please generate codes first');return}
-    setPushStatus('pushing');
-    try{
-      const students=store.students.map(s=>({
-        student_id:s.student_id, name_zh:s.name_zh, name_en:s.name_en,
-        email:s.email, group:s.group,
-        code:store.codes[s.student_id]||'',
-        status:store.submissions[s.student_id]?'submitted':'pending'
-      }));
-      await fetch(store.gasUrl,{
-        method:'POST', mode:'no-cors',
-        headers:{'Content-Type':'text/plain'},
-        body:JSON.stringify({action:'push_codes',students})
-      });
-      setPushStatus('done'); setTimeout(()=>setPushStatus(null),5000);
-    }catch(err){
-      setPushStatus('error:'+err.message); setTimeout(()=>setPushStatus(null),5000);
-    }
-  };
-
-  const getFilledGAS=()=>{
-    return GAS_SCRIPT.replace('{{EVAL_URL}}',store.evalUrl||'https://your-url.com/peer-eval.html')
-      .replace('{{ASSIGNMENT}}',store.assignment||'Assignment')
-      .replace('{{DEADLINE}}',store.deadline||'TBD')
-      .replace(/\{\{COURSE\}\}/g,'ITBM-EMI');
   };
 
   const computeResults=useMemo(()=>{
@@ -1004,10 +1073,6 @@ const App=()=>{
     downloadCSV('peer_eval_results.csv',csv);
   };
 
-  const addCriterion=()=>{updateStore({criteria:[...store.criteria,{id:'c'+Date.now(),name_zh:'',name_en:'',desc_zh:'',desc_en:''}]})};
-  const removeCriterion=id=>{updateStore({criteria:store.criteria.filter(c=>c.id!==id)})};
-  const updateCriterion=(id,f,v)=>{updateStore({criteria:store.criteria.map(c=>c.id===id?{...c,[f]:v}:c)})};
-
   const inputCls="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] dark:focus:ring-[#D8C3A5] focus:outline-none";
 
   // ─── Render Functions ───
@@ -1016,6 +1081,7 @@ const App=()=>{
       <div className="flex items-center gap-3 cursor-pointer" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
         <span className="font-serif font-black text-[#D8C3A5] tracking-widest text-xl">{t.brand}</span>
         <span className="text-white/80 text-sm font-sans hidden sm:block">{t.title}</span>
+        {isCloudMode && <span className="hidden md:inline-flex items-center gap-1 bg-green-900/40 text-green-300 px-2 py-0.5 rounded text-xs ml-2"><IconCloud size={14}/>Cloud</span>}
       </div>
       <div className="flex items-center gap-2">
         <button onClick={()=>setLang(lang==='zh'?'en':'zh')} className="px-3 py-1.5 text-xs font-bold text-[#D8C3A5] border border-[#D8C3A5]/30 rounded-lg hover:bg-[#D8C3A5]/10 transition">{t.lang_switch}</button>
@@ -1025,7 +1091,7 @@ const App=()=>{
   );
 
   const renderFooter=()=>(
-    <footer className="h-8 bg-[#004030] flex items-center justify-between px-4 shrink-0">
+    <footer className="h-8 bg-[#004030] flex items-center justify-between px-4 shrink-0 mt-auto">
       <span className="text-[#D8C3A5]/60 text-[10px] sm:text-xs truncate">{t.date} · {t.copyright}</span>
       <span className="text-[#D8C3A5]/60 text-[10px] sm:text-xs flex items-center gap-2">
         <span className="hidden sm:inline">Architect:&nbsp;<a href={t.architect_url} target="_blank" rel="noopener noreferrer" className="text-[#D8C3A5] hover:text-white underline underline-offset-2 transition-colors">{t.architect_name}</a></span>
@@ -1036,25 +1102,28 @@ const App=()=>{
   const renderLoginView=()=>(
     <div className="min-h-screen flex items-center justify-center p-4 pt-20">
       <div className="w-full max-w-md animate-fade-in">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700">
-          <div className="text-center mb-8">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700 relative overflow-hidden">
+          <div className={`absolute top-0 left-0 right-0 py-1.5 text-center text-xs font-bold flex justify-center items-center gap-1.5 ${isCloudMode?'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400':'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+            {isCloudMode ? <><IconCloud size={14}/> {t.cloud_mode_on}</> : <><IconCode size={14}/> {t.cloud_mode_off}</>}
+          </div>
+          <div className="text-center mb-8 mt-6">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#004030] dark:bg-[#D8C3A5]/10 flex items-center justify-center"><IconShield size={32} className="text-[#D8C3A5]"/></div>
             <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.login_title}</h1>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">{t.subtitle}</p>
-            {store.assignment&&<p className="text-[#004030] dark:text-[#D8C3A5] font-semibold mt-2">{store.assignment}</p>}
           </div>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.login_code_label}</label>
               <input ref={studentCodeRef} type="text" onKeyDown={e=>{if(e.key==='Enter') doStudentLogin()}}
-                placeholder={t.login_code_ph} className={inputCls + " font-mono text-lg tracking-widest"}/>
+                disabled={isSubmitting} placeholder={t.login_code_ph} className={inputCls + " font-mono text-lg tracking-widest"}/>
             </div>
-            {loginError&&<p className="text-red-500 text-sm">{loginError}</p>}
-            <button onClick={doStudentLogin}
-              className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition shadow-md">{t.login_btn}</button>
+            <button onClick={doStudentLogin} disabled={isSubmitting}
+              className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition shadow-md flex justify-center items-center disabled:opacity-70">
+              {isSubmitting ? <IconSpinner size={20}/> : t.login_btn}
+            </button>
           </div>
           <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 text-center">
-            <button onClick={()=>{setLoginError(''); setView('admin_login');}} className="text-sm text-slate-400 hover:text-[#004030] dark:hover:text-[#D8C3A5] transition flex items-center gap-1 mx-auto"><IconKey size={14}/> {t.admin_btn}</button>
+            <button onClick={()=>{setView('admin_login');}} className="text-sm text-slate-400 hover:text-[#004030] dark:hover:text-[#D8C3A5] transition flex items-center gap-1 mx-auto"><IconKey size={14}/> {t.admin_btn}</button>
           </div>
         </div>
       </div>
@@ -1076,13 +1145,8 @@ const App=()=>{
               <input ref={adminPwRef} type="password" onKeyDown={e=>{if(e.key==='Enter') doAdminLogin()}}
                 placeholder={t.admin_pw_ph} className={inputCls}/>
             </div>
-            <button onClick={doAdminLogin}
-              className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition">{t.admin_enter}</button>
-            <button onClick={()=>{
-              if(adminUserRef.current) adminUserRef.current.value='';
-              if(adminPwRef.current) adminPwRef.current.value='';
-              setView('login');
-            }} className="w-full py-2 text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
+            <button onClick={doAdminLogin} className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition">{t.admin_enter}</button>
+            <button onClick={()=>{if(adminUserRef.current) adminUserRef.current.value='';if(adminPwRef.current) adminPwRef.current.value='';setView('login');}} className="w-full py-2 text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
           </div>
         </div>
       </div>
@@ -1102,7 +1166,7 @@ const App=()=>{
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {isProf&&<button onClick={()=>{if(confirm(t.admin_reset_confirm))resetStore()}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>}
+              {isProf&&<button onClick={()=>{showConfirmDialog(t.admin_reset_confirm, ()=>resetStore())}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>}
               <button onClick={()=>{setView('login');setAdminRole(null);setAdminUser(null)}} className="text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
             </div>
           </div>
@@ -1112,7 +1176,7 @@ const App=()=>{
               {key:'codes',icon:<IconKey size={16}/>,label:t.admin_tab_codes},
               {key:'results',icon:<IconBarChart size={16}/>,label:t.admin_tab_results},
               ...(isProf?[{key:'ta',icon:<IconUsers size={16}/>,label:t.admin_tab_ta}]:[]),
-              {key:'gas',icon:<IconCode size={16}/>,label:t.admin_tab_gas}
+              {key:'gas',icon:<IconCloud size={16}/>,label:t.admin_tab_gas}
             ].map(tab=>(
               <button key={tab.key} onClick={()=>setAdminTab(tab.key)}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition whitespace-nowrap px-3
@@ -1138,11 +1202,6 @@ const App=()=>{
                   <input type="text" defaultValue={store.evalUrl} onBlur={e=>updateStore({evalUrl:e.target.value})} placeholder={t.setup_eval_url_ph} className={inputCls}/>
                 </div>
               </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_gas_url}</label>
-                <input type="text" defaultValue={store.gasUrl} onBlur={e=>updateStore({gasUrl:e.target.value})} placeholder={t.setup_gas_url_ph} className={inputCls}/>
-                <p className="text-xs text-slate-400 mt-1">{t.setup_gas_url_desc}</p>
-              </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
@@ -1163,7 +1222,7 @@ const App=()=>{
                 </h3>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400">{t.setup_roster_edit_email}</span>
-                  {isProf&&<button onClick={()=>{if(confirm(lang==='zh'?'確定清除學生名單？登入碼與提交記錄也會一併清除，此操作無法復原。':'Clear student roster? Login codes and submissions will also be cleared. This cannot be undone.'))updateStore({students:[],codes:{},submissions:{},groupScores:{}})}}
+                  {isProf&&<button onClick={()=>{showConfirmDialog(lang==='zh'?'確定清除學生名單？登入碼與提交記錄也會一併清除，此操作無法復原。':'Clear student roster?', ()=>updateStore({students:[],codes:{},submissions:{},groupScores:{}}))}}
                     className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>}
                 </div>
               </div>
@@ -1190,9 +1249,7 @@ const App=()=>{
                         <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{s.dept||'-'}</td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_zh}</td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_en}</td>
-                        <td className="px-3 py-2">
-                          <span className="px-2 py-0.5 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 text-[#004030] dark:text-[#D8C3A5] text-xs font-medium">{s.group}</span>
-                        </td>
+                        <td className="px-3 py-2"><span className="px-2 py-0.5 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 text-[#004030] dark:text-[#D8C3A5] text-xs font-medium">{s.group}</span></td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1.5">
                             <input type="text" defaultValue={s.email}
@@ -1283,27 +1340,29 @@ const App=()=>{
 
           {adminTab==='codes'&&<div className="space-y-4">
             <div className="flex flex-wrap gap-3">
-              <button onClick={handleGenerateCodes} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconRefresh size={16}/>{t.codes_generate}</button>
-              {store.gasUrl ? (
-                <button onClick={handlePushToSheets} disabled={pushStatus==='pushing'}
-                  className={`px-5 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-sm ${
-                    pushStatus==='done'?'bg-green-600 text-white':pushStatus==='pushing'?'bg-slate-300 text-slate-500 cursor-wait':'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
-                  }`}>
-                  <IconUpload size={16}/>
-                  {pushStatus==='pushing'?t.codes_pushing:pushStatus==='done'?t.codes_push_done:pushStatus&&pushStatus.startsWith('error')?t.codes_push_error.replace('{e}',pushStatus.slice(6)):t.codes_push}
-                </button>
-              ) : (
+              <button onClick={handleGenerateCodes} className="px-5 py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl hover:bg-slate-300 transition flex items-center gap-2 text-sm"><IconRefresh size={16}/>{t.codes_generate}</button>
+              
+              {!isCloudMode ? (
                 <button onClick={handleCopyCodesForGAS} className="px-5 py-2.5 border-2 border-[#004030] dark:border-[#D8C3A5] text-[#004030] dark:text-[#D8C3A5] font-bold rounded-xl hover:bg-[#004030]/5 transition flex items-center gap-2 text-sm">
                   <IconCopy size={16}/>{codeCopied?t.codes_copy_done:t.codes_export_gas}
                 </button>
+              ) : (
+                <button onClick={handlePushToCloud} disabled={pushStatus==='pushing'}
+                  className={`px-5 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-sm shadow-md ${
+                    pushStatus==='done'?'bg-green-600 text-white':
+                    pushStatus==='pushing'?'bg-slate-300 text-slate-500 cursor-wait':
+                    'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
+                  }`}>
+                  <IconCloud size={16}/>
+                  {pushStatus==='pushing'?t.codes_pushing:pushStatus==='done'?t.codes_push_done:pushStatus&&pushStatus.startsWith('error')?t.codes_push_error.replace('{e}',pushStatus.slice(6)):t.codes_push}
+                </button>
               )}
             </div>
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-300">
-              {store.gasUrl
-                ?(lang==='zh'?'💡 流程：產生登入碼 → 點「推送到 Google Sheets」→ 收到確認 Email → 到 Sheets 執行寄信。':'💡 Workflow: Generate codes → Push to Google Sheets → Receive confirmation email → Run send in Sheets.')
-                :(lang==='zh'?'💡 流程：產生登入碼 → 點「一鍵複製」→ 貼入 Google Sheets → 執行 GAS 腳本寄信。若要自動化，請在「設定」填入 GAS Web App URL。':'💡 Workflow: Generate codes → Copy → Paste into Google Sheets → Run GAS. For automation, set GAS Web App URL in Setup.')
-              }
-            </div>
+            
+            {!isCloudMode && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl p-4 text-sm text-red-800 dark:text-red-300">
+              ⚠️ {lang==='zh'?'目前尚未填寫 GAS URL，無法使用雲端推送。請至「部署 & 雲端設定指南」查看教學。':'Cloud URL missing. Please check the Deploy Guide to enable cloud push.'}
+            </div>}
+
             {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1330,6 +1389,23 @@ const App=()=>{
           </div>}
 
           {adminTab==='results'&&<div className="space-y-4">
+            <div className="flex justify-between items-center bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700">
+               <div>
+                  <h3 className="font-bold text-[#004030] dark:text-[#D8C3A5]">{lang==='zh'?'雲端成績同步':'Sync Data'}</h3>
+                  <p className="text-xs text-slate-500">{lang==='zh'?'從 Google Sheets 拉取學生最新送出的互評結果':'Fetch latest peer evaluation results from Google Sheets'}</p>
+               </div>
+               <button onClick={handleSyncFromCloud} disabled={syncStatus==='syncing' || !isCloudMode}
+                  className={`px-5 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-sm ${
+                    syncStatus==='done'?'bg-green-600 text-white':
+                    syncStatus==='syncing'?'bg-slate-300 text-slate-500 cursor-wait':
+                    !isCloudMode?'bg-slate-200 text-slate-400 cursor-not-allowed':
+                    'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
+                  }`}>
+                  <IconCloud size={16}/>
+                  {syncStatus==='syncing'?t.results_syncing:syncStatus==='done'?t.results_sync_done:t.results_sync_cloud}
+               </button>
+            </div>
+
             {!computeResults?<div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700"><IconBarChart size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-3"/><p className="text-slate-500">{t.results_no_data}</p></div>
             :<>
               <div className="flex justify-end"><button onClick={handleExportResults} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconDownload size={16}/>{t.results_export}</button></div>
@@ -1410,7 +1486,7 @@ const App=()=>{
                         <p className="text-xs text-slate-400">ID: {ta.id}</p>
                       </div>
                     </div>
-                    <button onClick={()=>{if(confirm(t.admin_ta_remove_confirm))updateStore({users:store.users.filter(u=>u.id!==ta.id)})}}
+                    <button onClick={()=>{showConfirmDialog(t.admin_ta_remove_confirm, ()=>updateStore({users:store.users.filter(u=>u.id!==ta.id)}))}}
                       className="text-xs text-red-400 hover:text-red-600">{t.admin_ta_remove}</button>
                   </div>
                 ))}
@@ -1427,8 +1503,8 @@ const App=()=>{
                   const name = newTaNameRef.current?.value?.trim();
                   const id = newTaIdRef.current?.value?.trim();
                   const pw = newTaPwRef.current?.value?.trim();
-                  if(!name||!id||!pw){alert(lang==='zh'?'請填寫完整':'Please fill all fields');return}
-                  if(store.users.find(u=>u.id===id)){alert(lang==='zh'?'帳號已存在':'Username already exists');return}
+                  if(!name||!id||!pw){showAlert(lang==='zh'?'請填寫完整':'Please fill all fields');return}
+                  if(store.users.find(u=>u.id===id)){showAlert(lang==='zh'?'帳號已存在':'Username already exists');return}
                   updateStore({users:[...store.users,{id,role:'ta',name,password:pw}]});
                   if(newTaNameRef.current) newTaNameRef.current.value='';
                   if(newTaIdRef.current) newTaIdRef.current.value='';
@@ -1442,7 +1518,6 @@ const App=()=>{
           {adminTab==='gas'&&<div className="space-y-6">
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
               <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.deploy_title}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">{lang==='zh'?'將此 HTML 檔部署到 GitHub Pages，學生即可透過連結開啟互評。':'Deploy this HTML to GitHub Pages so students can access the evaluation via URL.'}</p>
               <div className="space-y-3">
                 {[
                   {step:t.deploy_step1,desc:t.deploy_step1_desc,icon:'1️⃣'},
@@ -1459,58 +1534,21 @@ const App=()=>{
                   </div>
                 ))}
               </div>
-              <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-300">
-                {lang==='zh'?'💡 重要：上傳前請將檔名改為 index.html，GitHub Pages 才會自動將它作為首頁。':'💡 Important: Rename the file to index.html before uploading — GitHub Pages serves it as the homepage.'}
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-              <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.email_title}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">{lang==='zh'?'使用 Google Apps Script 自動寄出登入碼 Email 與催繳通知。':'Use Google Apps Script to auto-send login code emails and reminders.'}</p>
-              <div className="space-y-3">
-                {[
-                  {step:t.gas_step1,desc:t.gas_step1_desc,icon:'📊'}, {step:t.gas_step2,desc:t.gas_step2_desc,icon:'🔧'},
-                  {step:t.gas_step3,desc:t.gas_step3_desc,icon:'📋'}, {step:t.gas_step4,desc:t.gas_step4_desc,icon:'⚙️'},
-                  {step:t.gas_step5,desc:t.gas_step5_desc,icon:'▶️'}, {step:t.gas_step6,desc:t.gas_step6_desc,icon:'⏰'},
-                  {step:t.gas_step7,desc:t.gas_step7_desc,icon:'🔗'}
-                ].map((s,i)=>(
-                  <div key={i} className="flex gap-3 items-start">
-                    <div className="w-9 h-9 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 flex items-center justify-center text-base shrink-0">{s.icon}</div>
-                    <div className="flex-1 pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                      <p className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">{s.step}</p>
-                      <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{s.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-2xl p-5 border border-[#004030]/20 dark:border-[#D8C3A5]/20">
-              <p className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] text-sm mb-3">{lang==='zh'?'📋 完整操作流程':'📋 Complete Workflow'}</p>
-              <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1.5">
-                {(lang==='zh'?[
-                  '1. 部署 HTML → 取得 URL → 填入設定頁', '2. 上傳學生名單 CSV（email 自動產生）', '3. 設定評分標準 & 各組分數',
-                  '4. 「登入碼」頁 → 產生登入碼 → 一鍵複製', '5. 貼入 Google Sheets → 執行 GAS 寄信',
-                  '6. 學生收到 Email → 點連結 → 登入碼進入 → 拖移排序 → 送出', '7. 「結果」頁查看 → 匯出成績 CSV', '8. GAS 每日自動催繳未交者'
-                ]:[
-                  '1. Deploy HTML → get URL → paste into Setup', '2. Upload student roster CSV (email auto-generated)', '3. Set rubric criteria & group scores',
-                  '4. Codes tab → generate codes → one-click copy', '5. Paste into Google Sheets → run GAS to send emails',
-                  '6. Students receive email → click link → enter code → drag-rank → submit', '7. Results tab → view & export CSV', '8. GAS auto-reminds pending students daily'
-                ]).map((s,i)=><p key={i}>{s}</p>)}
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                💡 重要：只要在 index.html 內貼上 GAS URL，整套系統的運作邏輯就會自動從「本機版」升級為「連網雲端版」。
               </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">Google Apps Script</h3>
-                <button onClick={()=>{navigator.clipboard.writeText(getFilledGAS());setGasCopied(true);setTimeout(()=>setGasCopied(false),2000)}}
+                <button onClick={()=>{navigator.clipboard.writeText(GAS_SCRIPT);setGasCopied(true);setTimeout(()=>setGasCopied(false),2000)}}
                   className="px-4 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition">
                   <IconCopy size={14}/>{gasCopied?t.gas_copied:t.gas_copy_script}
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mb-3">{lang==='zh'?'腳本已自動填入您在「設定」頁輸入的作業名稱、截止日期與互評 URL。':'Script is auto-filled with your assignment name, deadline, and eval URL from Setup.'}</p>
               <pre className="bg-slate-900 text-green-400 p-4 rounded-xl text-xs overflow-x-auto max-h-[400px] overflow-y-auto leading-relaxed">
-                {getFilledGAS()}
+                {GAS_SCRIPT}
               </pre>
             </div>
           </div>}
@@ -1520,19 +1558,25 @@ const App=()=>{
   };
 
   const renderEvalView=()=>{
-    const user=store.students.find(s=>s.student_id===currentUser);
-    if(!user)return null;
-    const gm=groups[user.group]||[];
+    const currentData = isCloudMode ? cloudData : {
+      user: store.students.find(s=>s.student_id===currentUser),
+      groupMembers: groups[store.students.find(s=>s.student_id===currentUser)?.group] || [],
+      criteria: store.criteria,
+      assignment: store.assignment
+    };
+
+    if(!currentData || !currentData.user) return null;
+    
     return(
       <div className="min-h-screen pt-20 pb-12 px-4">
         <div className="max-w-3xl mx-auto animate-fade-in">
           <div className="mb-6">
             <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.eval_title}</h1>
-            {store.assignment&&<p className="text-slate-500 text-sm mt-1">{store.assignment}</p>}
+            {currentData.assignment && <p className="text-slate-500 text-sm mt-1">{currentData.assignment}</p>}
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 p-3 rounded-xl">{t.eval_instruction}</p>
           </div>
           <div className="space-y-8">
-            {store.criteria.map((c,idx)=>(
+            {currentData.criteria.map((c,idx)=>(
               <div key={c.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="mb-4">
                   <h2 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2">
@@ -1541,41 +1585,18 @@ const App=()=>{
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-9">{lang==='zh'?c.desc_zh:c.desc_en}</p>
                 </div>
-                <RankingBoard key={c.id} members={gm} currentUser={currentUser} lang={lang}
+                <RankingBoard key={c.id} members={currentData.groupMembers} currentUser={currentUser} lang={lang}
                   onRankingChange={r=>handleRankingChange(c.id,r)} existingRanking={null}/>
               </div>
             ))}
           </div>
           <div className="mt-8">
-            <button onClick={handleSubmitEval} className="w-full py-4 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold text-lg rounded-xl hover:opacity-90 transition shadow-lg">{t.eval_submit}</button>
+            <button onClick={handleSubmitEval} disabled={isSubmitting}
+               className="w-full py-4 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold text-lg rounded-xl hover:opacity-90 transition shadow-lg flex justify-center items-center disabled:opacity-70">
+              {isSubmitting ? <IconSpinner size={24}/> : t.eval_submit}
+            </button>
           </div>
         </div>
-        {showConfirm&&<div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fade-in border border-slate-200 dark:border-slate-700">
-            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-3">{t.eval_confirm_title}</h3>
-            <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">{t.eval_confirm_msg}</p>
-            <div className="mb-6 space-y-3 max-h-60 overflow-y-auto">
-              {store.criteria.map(c=>{
-                const ranking=evalRankings[c.id];if(!ranking)return null;
-                const cal=calibrateRanks(ranking,gm.length);
-                const sorted=Object.entries(cal).sort((a,b)=>a[1]-b[1]);
-                return(<div key={c.id} className="text-sm">
-                  <p className="font-medium text-[#004030] dark:text-[#D8C3A5] mb-1">{lang==='zh'?c.name_zh:c.name_en}</p>
-                  <div className="flex flex-wrap gap-1.5">{sorted.map(([sid,rank])=>{
-                    const m=store.students.find(s=>s.student_id===sid);
-                    return(<span key={sid} className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg">
-                      <span className="font-bold text-[#004030] dark:text-[#D8C3A5]">{rank}</span>{' '}{lang==='zh'?m?.name_zh:m?.name_en}
-                    </span>)
-                  })}</div>
-                </div>)
-              })}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={()=>setShowConfirm(false)} className="flex-1 py-2.5 border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm">{t.eval_confirm_no}</button>
-              <button onClick={confirmSubmit} className="flex-1 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-xl font-bold hover:opacity-90 transition text-sm">{t.eval_confirm_yes}</button>
-            </div>
-          </div>
-        </div>}
       </div>
     );
   };
@@ -1601,6 +1622,21 @@ const App=()=>{
         {view==='success'&&renderSuccessView()}
       </main>
       {renderFooter()}
+
+      {/* Global Dialog Modal */}
+      {dialog && (
+        <div className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl border border-slate-200 dark:border-slate-700 animate-fade-in">
+            <p className="text-slate-700 dark:text-slate-300 mb-6 whitespace-pre-line">{dialog.msg}</p>
+            <div className="flex gap-3">
+              {dialog.type === 'confirm' && (
+                <button onClick={()=>setDialog(null)} className="flex-1 py-2 border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">取消</button>
+              )}
+              <button onClick={()=>{ if(dialog.onConfirm) dialog.onConfirm(); setDialog(null); }} className="flex-1 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-xl font-bold hover:opacity-90 transition">確定</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
