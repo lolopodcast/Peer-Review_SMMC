@@ -496,6 +496,7 @@ const IconBarChart=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20}
 const IconKey=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>;
 const IconCopy=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
 const IconCode=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+const IconFile=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
 const IconCloud=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M17.5 19A5.5 5.5 0 0 0 18 8h-1.26A8 8 0 1 0 3 16.3"/><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/></svg>;
 const IconSpinner=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`animate-spin ${p.className||""}`}><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>;
 const IconMail=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={p.className||""}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>;
@@ -512,6 +513,30 @@ function calibrateRanks(assignments,groupSize){
 function rankToPercentile(r,n){return n<=1?1:(n-r)/(n-1)}
 function percentileToWeight(p,mn,mx){return mn+p*(mx-mn)}
 function downloadCSV(name,csv){const b=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+
+// 安全的剪貼簿複製函式 (支援 iframe/無 Secure Context 的環境)
+function copyTextToClipboard(text, onSuccess) {
+  const fallbackCopy = (txt) => {
+    const el = document.createElement('textarea');
+    el.value = txt;
+    el.setAttribute('readonly', '');
+    el.style.position = 'absolute';
+    el.style.left = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    try { document.execCommand('copy'); } catch(e) { console.error('Fallback copy failed', e); }
+    document.body.removeChild(el);
+    if(onSuccess) onSuccess();
+  };
+  
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => { if(onSuccess) onSuccess(); })
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
 
 const STORE_KEY='peer_eval_v2';
 function loadStore(){try{return JSON.parse(localStorage.getItem(STORE_KEY))||{}}catch{return{}}}
@@ -769,7 +794,7 @@ function extractCriteriaLocal(text) {
     if (seen.has(num)) continue;
     seen.add(num);
     let desc = match[2].trim().replace(/^該組員在?/,'').replace(/^每次參與小組討論時[，,]?\s*/,'');
-    const enMap = { '準備充分程度': 'Preparation Level', '準備充分': 'Preparation', '切中要點或有創意貢獻': 'Insight & Creative Contribution', '切中要點': 'Insight', '積極帶領討論或充份合作': 'Leadership & Collaboration', '帶領討論': 'Discussion Leadership', '書面報告整理與撰寫': 'Written Report Contribution', '主動且具體貢獻': 'Proactive Contribution', '團隊士氣或討論氣氛': 'Team Morale & Atmosphere', '正面且顯著提升': 'Positive Impact' };
+    const enMap = { '準備充分程度': 'Preparation Level', '準備充分': 'Preparation', '切中要點或有創意貢獻': 'Insight & Creative Contribution', '切中要點': 'Insight', '積極帶領討論或充份合作': 'Leadership & Collaboration', '帶領討論': 'Discussion Leadership', '書面報告整理與撰寫': 'Written Report Contribution', '主 ব্যথা且具體貢獻': 'Proactive Contribution', '團隊士氣或討論氣氛': 'Team Morale & Atmosphere', '正面且顯著提升': 'Positive Impact' };
     let nameEn = 'EC' + num, descEn = '', zhShortMap = {};
     for (const [zh, en] of Object.entries(enMap)) {
       if (desc.includes(zh)) { nameEn = en; descEn = en + ' ranking'; zhShortMap.short = zh; break; }
@@ -1168,7 +1193,11 @@ const App=()=>{
       const status=store.submissions[s.student_id]?'submitted':'pending';
       tsv+=`${s.student_id}\t${s.name_zh}\t${s.name_en}\t${s.email}\t${s.group}\t${code}\t${status}\n`;
     });
-    navigator.clipboard.writeText(tsv).then(()=>{setCodeCopied(true);setTimeout(()=>setCodeCopied(false),2000)});
+    
+    copyTextToClipboard(tsv, () => {
+      setCodeCopied(true);
+      setTimeout(()=>setCodeCopied(false),2000);
+    });
   };
 
   const computeResults=useMemo(()=>{
@@ -1696,7 +1725,12 @@ const App=()=>{
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 w-full overflow-hidden">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 mb-3">
                 <h3 className="font-serif font-bold text-base sm:text-lg text-[#004030] dark:text-[#D8C3A5]">Google Apps Script</h3>
-                <button onClick={()=>{navigator.clipboard.writeText(GAS_SCRIPT);setGasCopied(true);setTimeout(()=>setGasCopied(false),2000)}}
+                <button onClick={()=>{
+                  copyTextToClipboard(GAS_SCRIPT, () => {
+                    setGasCopied(true);
+                    setTimeout(()=>setGasCopied(false), 2000);
+                  });
+                }}
                   className="px-3 sm:px-4 py-1.5 sm:py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1 sm:gap-2 hover:opacity-90 transition">
                   <IconCopy size={14}/>{gasCopied?t.gas_copied:t.gas_copy_script}
                 </button>
