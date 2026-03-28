@@ -204,8 +204,7 @@ architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/2
 const GAS_SCRIPT = `/**
  * Peer Evaluation — Google Apps Script
  * 同儕互評登入碼寄送 & 催繳自動通知
- * 
- * Sheet 欄位：student_id | name_zh | name_en | email | group | code | status
+ * * Sheet 欄位：student_id | name_zh | name_en | email | group | code | status
  */
 
 const CONFIG = {
@@ -304,23 +303,18 @@ function onOpen() {
     .addToUi();
 }
 
-// ═══ Web App: receive data from SPA via POST ═══
-// Deploy: Deploy → New deployment → Web app → Execute as me → Anyone can access
-// Copy the Web App URL and paste into SPA "GAS Web App URL" field
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
     
     if (data.action === 'push_codes') {
-      // Clear existing data and write new
       sheet.clearContents();
       sheet.getRange(1,1,1,7).setValues([['student_id','name_zh','name_en','email','group','code','status']]);
       const rows = data.students.map(s => [s.student_id, s.name_zh, s.name_en, s.email, s.group, s.code, s.status]);
       if (rows.length > 0) {
         sheet.getRange(2,1,rows.length,7).setValues(rows);
       }
-      // Notify admin via email
       MailApp.sendEmail({
         to: data.adminEmail || Session.getActiveUser().getEmail(),
         subject: '[Peer Eval] 資料已寫入 Data received — 待確認寄出',
@@ -346,8 +340,6 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }`;
-
-// ═══ Note: the following function is NOT inside the GAS_SCRIPT template ═══
 
 // ─── Icons ───
 const Icon=({d,size=20,className=""})=><svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d={d}/></svg>;
@@ -410,25 +402,16 @@ async function parseRosterFile(file) {
   if (ext === 'pdf') {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data: buf}).promise;
-
-    // Extract all text items with Y positions to reconstruct lines
     const allItems = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const tc = await page.getTextContent();
       tc.items.forEach(item => {
         if (!item.str || !item.str.trim()) return;
-        allItems.push({
-          text: item.str,
-          x: Math.round(item.transform[4]),
-          y: Math.round(item.transform[5]),
-          page: i
-        });
+        allItems.push({ text: item.str, x: Math.round(item.transform[4]), y: Math.round(item.transform[5]), page: i });
       });
     }
-
-    // Group by Y (same line = same Y, tolerance ±3)
-    allItems.sort((a,b) => b.y - a.y || a.x - b.x); // top-down, left-right
+    allItems.sort((a,b) => b.y - a.y || a.x - b.x);
     const lines = [];
     let currentLine = [];
     let currentY = null;
@@ -450,8 +433,6 @@ async function parseRosterFile(file) {
       currentLine.sort((a,b) => a.x - b.x);
       lines.push(currentLine.map(it => it.text).join(' '));
     }
-
-    // Now parse the reconstructed lines
     return parsePdfLines(lines);
   }
   if (ext === 'txt') {
@@ -479,90 +460,41 @@ const EMAIL_DOMAIN = '@mail1.ncnu.edu.tw';
 function autoEmail(sid) { return 's' + String(sid).replace(/^s/i,'') + EMAIL_DOMAIN; }
 
 function normalizeRows(rows) {
-  // Highly flexible column name matching — supports any order, any naming convention
-  // Each field has: exact matches, partial matches (substring), and regex patterns
   const colDefs = {
-    student_id: {
-      exact: ['student_id','studentid','id','學號','sid','no','number','sno','stdid','std_id','stuid','stu_id'],
-      partial: ['學號','stdno','stuno','student','stuId'],
-      regex: /^(s?tu(dent)?[_\s]?(id|no|num))|學號|id$/i
-    },
-    dept: {
-      exact: ['dept','department','系所','系級','系所年級','科系','系別','class','grade','年級','系所班級','deptgrade','dept_grade'],
-      partial: ['系所','系級','年級','科系','系別','dept','department','class','grade','major'],
-      regex: /系|級|dept|department|major|class|grade/i
-    },
-    name_zh: {
-      exact: ['name_zh','namezh','chinese_name','中文姓名','姓名','名字','name_chinese','中文名','cname','chname','ch_name','中文'],
-      partial: ['中文','chinese','姓名','名字','cname'],
-      regex: /中文|chinese|姓名|^名/i
-    },
-    name_en: {
-      exact: ['name_en','nameen','english_name','英文姓名','英文名','name_english','ename','enname','en_name','英文','english'],
-      partial: ['英文','english','ename','enname'],
-      regex: /英文|english|^en[_\s]?name/i
-    },
-    email: {
-      exact: ['email','e-mail','mail','電子郵件','信箱','電郵','e_mail','emailaddress','email_address'],
-      partial: ['email','mail','信箱','電郵'],
-      regex: /e?-?mail|信箱|電郵/i
-    },
-    group: {
-      exact: ['group','grp','team','組別','小組','分組','group_name','groupname','組','team_name','teamname','group_no'],
-      partial: ['組','group','team','grp'],
-      regex: /組|group|team|grp/i
-    }
+    student_id: { exact: ['student_id','studentid','id','學號','sid','no','number','sno','stdid','std_id','stuid','stu_id'], partial: ['學號','stdno','stuno','student','stuId'], regex: /^(s?tu(dent)?[_\s]?(id|no|num))|學號|id$/i },
+    dept: { exact: ['dept','department','系所','系級','系所年級','科系','系別','class','grade','年級','系所班級','deptgrade','dept_grade'], partial: ['系所','系級','年級','科系','系別','dept','department','class','grade','major'], regex: /系|級|dept|department|major|class|grade/i },
+    name_zh: { exact: ['name_zh','namezh','chinese_name','中文姓名','姓名','名字','name_chinese','中文名','cname','chname','ch_name','中文'], partial: ['中文','chinese','姓名','名字','cname'], regex: /中文|chinese|姓名|^名/i },
+    name_en: { exact: ['name_en','nameen','english_name','英文姓名','英文名','name_english','ename','enname','en_name','英文','english'], partial: ['英文','english','ename','enname'], regex: /英文|english|^en[_\s]?name/i },
+    email: { exact: ['email','e-mail','mail','電子郵件','信箱','電郵','e_mail','emailaddress','email_address'], partial: ['email','mail','信箱','電郵'], regex: /e?-?mail|信箱|電郵/i },
+    group: { exact: ['group','grp','team','組別','小組','分組','group_name','groupname','組','team_name','teamname','group_no'], partial: ['組','group','team','grp'], regex: /組|group|team|grp/i }
   };
 
   function findCol(obj, fieldName) {
     const def = colDefs[fieldName];
     const keys = Object.keys(obj);
     const norm = s => s.toLowerCase().replace(/[_\s\-\.]/g, '');
-
-    // Pass 1: exact match (after normalization)
-    for (const candidate of def.exact) {
-      const found = keys.find(k => norm(k) === norm(candidate));
-      if (found) return obj[found];
-    }
-    // Pass 2: partial/substring match
-    for (const candidate of def.partial) {
-      const found = keys.find(k => norm(k).includes(norm(candidate)) || norm(candidate).includes(norm(k)));
-      if (found) return obj[found];
-    }
-    // Pass 3: regex match
-    if (def.regex) {
-      const found = keys.find(k => def.regex.test(k));
-      if (found) return obj[found];
-    }
+    for (const candidate of def.exact) { const found = keys.find(k => norm(k) === norm(candidate)); if (found) return obj[found]; }
+    for (const candidate of def.partial) { const found = keys.find(k => norm(k).includes(norm(candidate)) || norm(candidate).includes(norm(k))); if (found) return obj[found]; }
+    if (def.regex) { const found = keys.find(k => def.regex.test(k)); if (found) return obj[found]; }
     return '';
-  }
-
-  // Disambiguation: if "name" column exists but no specific zh/en name columns,
-  // try to split or detect language
-  function hasAnyKey(obj, fieldName) {
-    return String(findCol(obj, fieldName)).trim() !== '';
   }
 
   return rows.map(r => {
     const sid = String(findCol(r, 'student_id')).trim();
     const manualEmail = String(findCol(r, 'email')).trim();
-
-    // Handle case where there's only a single "name"/"姓名" column
     let nameZh = String(findCol(r, 'name_zh')).trim();
     let nameEn = String(findCol(r, 'name_en')).trim();
 
-    // If one is missing, check for a generic "name" column
     if (!nameZh || !nameEn) {
       const keys = Object.keys(r);
       const genericNameKey = keys.find(k => /^name$|^姓名$/i.test(k.trim()));
       if (genericNameKey) {
         const val = String(r[genericNameKey]).trim();
-        // Detect if Chinese or English by character range
         const hasChinese = /[\u4e00-\u9fff]/.test(val);
         const hasLatin = /[a-zA-Z]{2,}/.test(val);
         if (!nameZh && hasChinese) nameZh = val;
         if (!nameEn && hasLatin) nameEn = val;
-        if (!nameZh && !hasChinese) nameZh = val; // fallback
+        if (!nameZh && !hasChinese) nameZh = val;
         if (!nameEn && !hasLatin) nameEn = val;
       }
     }
@@ -579,18 +511,13 @@ function normalizeRows(rows) {
 }
 
 function parsePdfLines(lines) {
-  // Step 1: find header line
   const headerRe = /(學號|student.?id|sid).*(姓名|name).*(組|group)/i;
   const headerRe2 = /(系所|dept).*(學號|sid|id)/i;
   let headerIdx = -1;
   for (let i = 0; i < Math.min(lines.length, 20); i++) {
-    if (headerRe.test(lines[i]) || headerRe2.test(lines[i])) {
-      headerIdx = i;
-      break;
-    }
+    if (headerRe.test(lines[i]) || headerRe2.test(lines[i])) { headerIdx = i; break; }
   }
 
-  // Step 2: parse each line that contains a student ID (9-12 digit number)
   const students = [];
   const sidRe = /\b(\d{9,12})\b/;
 
@@ -602,27 +529,18 @@ function parsePdfLines(lines) {
 
     const sid = sidMatch[1];
     const sidPos = line.indexOf(sid);
-
-    // Everything before SID = dept (e.g., "國企系碩士班一年級")
     const beforeSid = line.substring(0, sidPos).trim();
-
-    // Everything after SID = name_zh, name_en, group
     const afterSid = line.substring(sidPos + sid.length).trim();
-
-    // Parse afterSid: find group pattern (G1, G2, etc.) at the end
     const groupMatch = afterSid.match(/\b(G\d+)\s*$/i);
     const group = groupMatch ? groupMatch[1] : '';
     const namesPart = groupMatch ? afterSid.substring(0, groupMatch.index).trim() : afterSid;
 
-    // Split names: Chinese characters vs Latin characters
     let nameZh = '', nameEn = '';
-    // Strategy: find boundary between Chinese and English text
     const zhMatch = namesPart.match(/^([\u4e00-\u9fff\u3400-\u4dbf]+)/);
     if (zhMatch) {
       nameZh = zhMatch[1];
       nameEn = namesPart.substring(zhMatch[0].length).trim();
     } else {
-      // Maybe English first, Chinese later
       const parts = namesPart.split(/\s+/);
       parts.forEach(p => {
         if (/[\u4e00-\u9fff]/.test(p)) nameZh += (nameZh ? '' : '') + p;
@@ -632,12 +550,8 @@ function parsePdfLines(lines) {
 
     if (sid && group) {
       students.push({
-        student_id: sid,
-        dept: beforeSid,
-        name_zh: nameZh.trim(),
-        name_en: nameEn.trim(),
-        email: autoEmail(sid),
-        group: group.toUpperCase()
+        student_id: sid, dept: beforeSid, name_zh: nameZh.trim(), name_en: nameEn.trim(),
+        email: autoEmail(sid), group: group.toUpperCase()
       });
     }
   }
@@ -645,12 +559,10 @@ function parsePdfLines(lines) {
 }
 
 function parseTextToRoster(text) {
-  // Convert to lines and delegate to parsePdfLines
   const lines = text.split('\n').filter(l => l.trim());
   const result = parsePdfLines(lines);
   if (result.length > 0) return result;
 
-  // Fallback for tab/comma separated data
   const parsed = [];
   for (const line of lines) {
     let parts;
@@ -676,14 +588,12 @@ function parseTextToRoster(text) {
     });
 
     parsed.push({
-      student_id: sid, dept, name_zh: nameZh, name_en: nameEn,
-      email: autoEmail(sid), group: group
+      student_id: sid, dept, name_zh: nameZh, name_en: nameEn, email: autoEmail(sid), group: group
     });
   }
   return parsed;
 }
 
-// ─── Criteria extraction from document text ───
 async function extractCriteriaFromFile(file) {
   const name = file.name.toLowerCase();
   const ext = name.split('.').pop();
@@ -694,118 +604,64 @@ async function extractCriteriaFromFile(file) {
   } else if (ext === 'xlsx' || ext === 'xls') {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, {type:'array'});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    text = XLSX.utils.sheet_to_csv(ws);
+    text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
   } else if (ext === 'docx') {
     const buf = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({arrayBuffer: buf});
-    text = result.value;
+    text = (await mammoth.extractRawText({arrayBuffer: buf})).value;
   } else if (ext === 'pdf') {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data: buf}).promise;
     for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
       const page = await pdf.getPage(i);
-      const tc = await page.getTextContent();
-      text += tc.items.map(it => it.str).join(' ') + '\n';
+      text += (await page.getTextContent()).items.map(it => it.str).join(' ') + '\n';
     }
   }
 
-  // ─── Local regex-based extraction (primary, no API needed) ───
   const criteria = extractCriteriaLocal(text);
   if (criteria.length > 0) return criteria;
 
-  // ─── Claude API fallback ───
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
+      method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `Extract peer evaluation rubric criteria from this document. Return ONLY valid JSON array, no markdown backticks. Format: [{"name_zh":"中文名","name_en":"English Name","desc_zh":"中文說明","desc_en":"English description"}]
-
-Document:
-${text.substring(0, 4000)}`
-        }]
+        model: "claude-sonnet-4-20250514", max_tokens: 1000,
+        messages: [{ role: "user", content: `Extract peer evaluation rubric criteria from this document. Return ONLY valid JSON array, no markdown backticks. Format: [{"name_zh":"中文名","name_en":"English Name","desc_zh":"中文說明","desc_en":"English description"}]\n\nDocument:\n${text.substring(0, 4000)}` }]
       })
     });
     const data = await resp.json();
-    const raw = data.content?.map(c => c.text || '').join('') || '[]';
-    const clean = raw.replace(/```json|```/g, '').trim();
-    return JSON.parse(clean);
-  } catch(e) {
-    return [];
-  }
+    return JSON.parse((data.content?.map(c => c.text || '').join('') || '[]').replace(/```json|```/g, '').trim());
+  } catch(e) { return []; }
 }
 
 function extractCriteriaLocal(text) {
   const criteria = [];
-  const seen = new Set(); // Deduplicate by EC number across repeated pages
-
-  // Pattern 1: EC1~ECn format (ITBM style)
+  const seen = new Set();
   const ecPattern = /(?:[ivx]+\.\s*)?EC(\d+)\s*[：:]\s*(.+?)(?:的排名|的排序)[。.]?/gi;
   let match;
   while ((match = ecPattern.exec(text)) !== null) {
     const num = match[1];
     if (seen.has(num)) continue;
     seen.add(num);
-
-    let desc = match[2].trim();
-    desc = desc.replace(/^該組員在?/,'').replace(/^每次參與小組討論時[，,]?\s*/,'');
-
-    const enMap = {
-      '準備充分程度': 'Preparation Level',
-      '準備充分': 'Preparation',
-      '切中要點或有創意貢獻': 'Insight & Creative Contribution',
-      '切中要點': 'Insight',
-      '積極帶領討論或充份合作': 'Leadership & Collaboration',
-      '帶領討論': 'Discussion Leadership',
-      '書面報告整理與撰寫': 'Written Report Contribution',
-      '主動且具體貢獻': 'Proactive Contribution',
-      '團隊士氣或討論氣氛': 'Team Morale & Atmosphere',
-      '正面且顯著提升': 'Positive Impact'
-    };
-    let nameEn = 'EC' + num, descEn = '';
-    const zhShortMap = {};
+    let desc = match[2].trim().replace(/^該組員在?/,'').replace(/^每次參與小組討論時[，,]?\s*/,'');
+    const enMap = { '準備充分程度': 'Preparation Level', '準備充分': 'Preparation', '切中要點或有創意貢獻': 'Insight & Creative Contribution', '切中要點': 'Insight', '積極帶領討論或充份合作': 'Leadership & Collaboration', '帶領討論': 'Discussion Leadership', '書面報告整理與撰寫': 'Written Report Contribution', '主動且具體貢獻': 'Proactive Contribution', '團隊士氣或討論氣氛': 'Team Morale & Atmosphere', '正面且顯著提升': 'Positive Impact' };
+    let nameEn = 'EC' + num, descEn = '', zhShortMap = {};
     for (const [zh, en] of Object.entries(enMap)) {
       if (desc.includes(zh)) { nameEn = en; descEn = en + ' ranking'; zhShortMap.short = zh; break; }
     }
     const nameZh = zhShortMap.short || (desc.length > 12 ? desc.substring(0, 10) + '…' : desc);
-
-    criteria.push({
-      id: 'ec' + num + '_' + Date.now(),
-      name_zh: 'EC' + num + ' ' + nameZh,
-      name_en: 'EC' + num + ' ' + nameEn,
-      desc_zh: '該組員' + (desc.startsWith('能') || desc.startsWith('對') ? '' : '在每次參與小組討論時，') + desc,
-      desc_en: descEn || nameEn
-    });
+    criteria.push({ id: 'ec' + num + '_' + Date.now(), name_zh: 'EC' + num + ' ' + nameZh, name_en: 'EC' + num + ' ' + nameEn, desc_zh: '該組員' + (desc.startsWith('能') || desc.startsWith('對') ? '' : '在每次參與小組討論時，') + desc, desc_en: descEn || nameEn });
   }
-
   if (criteria.length > 0) return criteria;
 
-  // Pattern 2: Numbered criteria with descriptions
-  // e.g., "1. 準備充分程度" or "Criterion 1: Preparation level"
   const numberedPattern = /(?:^|\n)\s*(\d+)\s*[.、)）]\s*(.{4,60})/gm;
   const candidates = [];
   while ((match = numberedPattern.exec(text)) !== null) {
     const desc = match[2].trim();
-    // Filter out non-criteria lines (too short, no evaluative language)
-    if (/評|貢獻|表現|合作|能力|quality|contribution|effort|collaboration/i.test(desc)) {
-      candidates.push(desc);
-    }
+    if (/評|貢獻|表現|合作|能力|quality|contribution|effort|collaboration/i.test(desc)) candidates.push(desc);
   }
   if (candidates.length >= 2) {
-    return candidates.map((desc, i) => ({
-      id: 'cr' + (i+1) + '_' + Date.now(),
-      name_zh: desc.substring(0, 20),
-      name_en: 'Criterion ' + (i + 1),
-      desc_zh: desc,
-      desc_en: ''
-    }));
+    return candidates.map((desc, i) => ({ id: 'cr' + (i+1) + '_' + Date.now(), name_zh: desc.substring(0, 20), name_en: 'Criterion ' + (i + 1), desc_zh: desc, desc_en: '' }));
   }
-
   return [];
 }
 
@@ -906,14 +762,13 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
 
 // ─── Main App ───
 const App=()=>{
+  // Top-level State
   const[lang,setLang]=useState('zh');
   const[dark,setDark]=useState(false);
   const[view,setView]=useState('login');
   const[adminTab,setAdminTab]=useState('setup');
-  const[adminPw,setAdminPw]=useState('');
   const[adminRole,setAdminRole]=useState(null); // 'professor' | 'ta'
-  const[adminUser,setAdminUser]=useState(null); // current logged-in user object
-  const[loginCode,setLoginCode]=useState('');
+  const[adminUser,setAdminUser]=useState(null); 
   const[loginError,setLoginError]=useState('');
   const[currentUser,setCurrentUser]=useState(null);
   const[showConfirm,setShowConfirm]=useState(false);
@@ -924,7 +779,7 @@ const App=()=>{
   const[criteriaImporting,setCriteriaImporting]=useState(false);
   const[gasCopied,setGasCopied]=useState(false);
   const[codeCopied,setCodeCopied]=useState(false);
-  const[pushStatus,setPushStatus]=useState(null); // null | 'pushing' | 'done' | 'error:msg'
+  const[pushStatus,setPushStatus]=useState(null);
 
   const[store,setStoreState]=useState(()=>{
     const s=loadStore();
@@ -940,9 +795,7 @@ const App=()=>{
       codes:s.codes||{},submissions:s.submissions||{},
       weightMin:s.weightMin||0.55,weightMax:s.weightMax||1.45,
       adminPassword:s.adminPassword||'admin2026',
-      users:s.users||[
-        {id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}
-      ],
+      users:s.users||[{id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}],
       assignment:s.assignment||'',
       groupScores:s.groupScores||{},
       deadline:s.deadline||'',
@@ -962,14 +815,65 @@ const App=()=>{
   const[evalRankings,setEvalRankings]=useState({});
   const handleRankingChange=useCallback((cid,r)=>{setEvalRankings(p=>({...p,[cid]:r}))},[]);
 
-  // ─── File upload handlers ───
+  // Refs for Login to avoid unmount/remount state wipe issues
+  const studentCodeRef = useRef(null);
+  const adminUserRef = useRef(null);
+  const adminPwRef = useRef(null);
+  const newTaNameRef = useRef(null);
+  const newTaIdRef = useRef(null);
+  const newTaPwRef = useRef(null);
+
+  // ─── Login Handlers ───
+  const doStudentLogin=()=>{
+    const code = (studentCodeRef.current?.value || '').trim();
+    const sid = Object.keys(store.codes).find(k => store.codes[k] === code);
+    if(!sid){setLoginError(t.login_error);return}
+    if(store.submissions[sid]){setLoginError(t.login_already);return}
+    setCurrentUser(sid);
+    setLoginError('');
+    const init={};store.criteria.forEach(c=>{init[c.id]=null});
+    setEvalRankings(init);
+    setView('eval');
+  };
+
+  const doAdminLogin=()=>{
+    const uid = (adminUserRef.current?.value || '').trim();
+    const pw = (adminPwRef.current?.value || '').trim();
+    let allUsers = store.users || [];
+    
+    // Fallback safeguard in case store.users is entirely missing
+    if (allUsers.length === 0) {
+      allUsers = [{id:'prof',role:'professor',name:'Prof. Lo',password:store.adminPassword||'admin2026'}];
+      updateStore({users:allUsers});
+    }
+
+    // Exact Match
+    const found = allUsers.find(u => u.id === uid && u.password === pw);
+    if (found) {
+      setAdminRole(found.role); setAdminUser(found); setView('admin'); return;
+    }
+
+    // Legacy / Convenience Professor Match (Allows blank ID if password is correct)
+    const prof = allUsers.find(u => u.role === 'professor' && u.password === pw);
+    if (prof && (!uid || uid === prof.id)) {
+      setAdminRole('professor'); setAdminUser(prof); setView('admin'); return;
+    }
+
+    // Ultimate fallback if JSON data was corrupted
+    if ((!uid || uid === 'prof') && pw === (store.adminPassword || 'admin2026')) {
+      setAdminRole('professor'); setAdminUser({id:'prof',role:'professor',name:'Prof. Lo'}); setView('admin'); return;
+    }
+
+    alert(lang==='zh' ? '帳號或密碼錯誤' : 'Invalid username or password');
+  };
+
+  // ─── Shared UI Handlers ───
   const handleRosterUpload=async(e)=>{
     const file=e.target.files[0];if(!file)return;
     setParsing(true);setParseMsg('');
     try{
       const students=await parseRosterFile(file);
       if(students.length===0)throw new Error('No valid student rows found');
-      // Auto-set group scores to 1 for new groups
       const newGroups = [...new Set(students.map(s=>s.group))];
       const gs = {...store.groupScores};
       newGroups.forEach(g => { if(!gs[g]) gs[g] = '1'; });
@@ -993,17 +897,6 @@ const App=()=>{
     finally{setCriteriaImporting(false);e.target.value=''}
   };
 
-  // ─── Login ───
-  const handleLogin=()=>{
-    const sid=Object.keys(store.codes).find(k=>store.codes[k]===loginCode.trim());
-    if(!sid){setLoginError(t.login_error);return}
-    if(store.submissions[sid]){setLoginError(t.login_already);return}
-    setCurrentUser(sid);setLoginError('');
-    const init={};store.criteria.forEach(c=>{init[c.id]=null});
-    setEvalRankings(init);setView('eval');
-  };
-
-  // ─── Submit ───
   const handleSubmitEval=()=>{
     const allDone=store.criteria.every(c=>evalRankings[c.id]!==null);
     if(!allDone){alert(t.eval_incomplete);return}
@@ -1013,12 +906,12 @@ const App=()=>{
     store.criteria.forEach(c=>{calibrated[c.id]=calibrateRanks(evalRankings[c.id],gm.length)});
     window.__pending=calibrated;setShowConfirm(true);
   };
+
   const confirmSubmit=()=>{
     updateStore({submissions:{...store.submissions,[currentUser]:window.__pending}});
     setShowConfirm(false);setView('success');
   };
 
-  // ─── Generate & Export Codes ───
   const handleGenerateCodes=()=>{const codes={};store.students.forEach(s=>{codes[s.student_id]=generateCode(10)});updateStore({codes})};
 
   const handleCopyCodesForGAS=()=>{
@@ -1041,7 +934,6 @@ const App=()=>{
     downloadCSV('peer_eval_codes.csv',csv);
   };
 
-  // ─── Push to Google Sheets via GAS Web App ───
   const handlePushToSheets=async()=>{
     if(!store.gasUrl){alert(lang==='zh'?'請先在「設定」填入 GAS Web App URL':'Please set GAS Web App URL in Setup first');return}
     if(!Object.keys(store.codes).length){alert(lang==='zh'?'請先產生登入碼':'Please generate codes first');return}
@@ -1053,30 +945,24 @@ const App=()=>{
         code:store.codes[s.student_id]||'',
         status:store.submissions[s.student_id]?'submitted':'pending'
       }));
-      const resp=await fetch(store.gasUrl,{
+      await fetch(store.gasUrl,{
         method:'POST', mode:'no-cors',
         headers:{'Content-Type':'text/plain'},
         body:JSON.stringify({action:'push_codes',students})
       });
-      // no-cors means we can't read the response, but if no error thrown, it likely worked
-      setPushStatus('done');
-      setTimeout(()=>setPushStatus(null),5000);
+      setPushStatus('done'); setTimeout(()=>setPushStatus(null),5000);
     }catch(err){
-      setPushStatus('error:'+err.message);
-      setTimeout(()=>setPushStatus(null),5000);
+      setPushStatus('error:'+err.message); setTimeout(()=>setPushStatus(null),5000);
     }
   };
 
-  // ─── GAS script with config filled ───
   const getFilledGAS=()=>{
-    return GAS_SCRIPT
-      .replace('{{EVAL_URL}}',store.evalUrl||'https://your-url.com/peer-eval.html')
+    return GAS_SCRIPT.replace('{{EVAL_URL}}',store.evalUrl||'https://your-url.com/peer-eval.html')
       .replace('{{ASSIGNMENT}}',store.assignment||'Assignment')
       .replace('{{DEADLINE}}',store.deadline||'TBD')
       .replace(/\{\{COURSE\}\}/g,'ITBM-EMI');
   };
 
-  // ─── Compute Results ───
   const computeResults=useMemo(()=>{
     if(!store.students.length||!Object.keys(store.submissions).length)return null;
     const results={};
@@ -1118,13 +1004,14 @@ const App=()=>{
     downloadCSV('peer_eval_results.csv',csv);
   };
 
-  // ─── Criteria management ───
   const addCriterion=()=>{updateStore({criteria:[...store.criteria,{id:'c'+Date.now(),name_zh:'',name_en:'',desc_zh:'',desc_en:''}]})};
   const removeCriterion=id=>{updateStore({criteria:store.criteria.filter(c=>c.id!==id)})};
   const updateCriterion=(id,f,v)=>{updateStore({criteria:store.criteria.map(c=>c.id===id?{...c,[f]:v}:c)})};
 
-  // ─── Header / Footer ───
-  const Header=()=>(
+  const inputCls="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] dark:focus:ring-[#D8C3A5] focus:outline-none";
+
+  // ─── Render Functions ───
+  const renderHeader=()=>(
     <header className="fixed top-0 left-0 right-0 h-16 z-50 bg-[#004030] flex items-center justify-between px-4 shadow-lg">
       <div className="flex items-center gap-3 cursor-pointer" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>
         <span className="font-serif font-black text-[#D8C3A5] tracking-widest text-xl">{t.brand}</span>
@@ -1136,7 +1023,8 @@ const App=()=>{
       </div>
     </header>
   );
-  const Footer=()=>(
+
+  const renderFooter=()=>(
     <footer className="h-8 bg-[#004030] flex items-center justify-between px-4 shrink-0">
       <span className="text-[#D8C3A5]/60 text-[10px] sm:text-xs truncate">{t.date} · {t.copyright}</span>
       <span className="text-[#D8C3A5]/60 text-[10px] sm:text-xs flex items-center gap-2">
@@ -1145,11 +1033,7 @@ const App=()=>{
     </footer>
   );
 
-  // Shared input class (fixes the 1-char-at-a-time bug by NOT using controlled state on every keystroke for these)
-  const inputCls="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] dark:focus:ring-[#D8C3A5] focus:outline-none";
-
-  // ─── LOGIN VIEW ───
-  const LoginView=()=>(
+  const renderLoginView=()=>(
     <div className="min-h-screen flex items-center justify-center p-4 pt-20">
       <div className="w-full max-w-md animate-fade-in">
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700">
@@ -1162,43 +1046,22 @@ const App=()=>{
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.login_code_label}</label>
-              <input type="text" defaultValue="" onBlur={e=>setLoginCode(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){setLoginCode(e.target.value);setTimeout(handleLogin,50)}}}
+              <input ref={studentCodeRef} type="text" onKeyDown={e=>{if(e.key==='Enter') doStudentLogin()}}
                 placeholder={t.login_code_ph} className={inputCls + " font-mono text-lg tracking-widest"}/>
             </div>
             {loginError&&<p className="text-red-500 text-sm">{loginError}</p>}
-            <button onClick={()=>{const el=document.querySelector('input[type=text]');if(el)setLoginCode(el.value);setTimeout(handleLogin,50)}}
+            <button onClick={doStudentLogin}
               className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition shadow-md">{t.login_btn}</button>
           </div>
           <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 text-center">
-            <button onClick={()=>setView('admin_login')} className="text-sm text-slate-400 hover:text-[#004030] dark:hover:text-[#D8C3A5] transition flex items-center gap-1 mx-auto"><IconKey size={14}/> {t.admin_btn}</button>
+            <button onClick={()=>{setLoginError(''); setView('admin_login');}} className="text-sm text-slate-400 hover:text-[#004030] dark:hover:text-[#D8C3A5] transition flex items-center gap-1 mx-auto"><IconKey size={14}/> {t.admin_btn}</button>
           </div>
         </div>
       </div>
     </div>
   );
 
-  // ─── ADMIN LOGIN ───
-  const AdminLoginView=()=>{
-    const userRef=useRef(null);
-    const pwRef=useRef(null);
-    const doLogin=()=>{
-      const uid=(userRef.current?.value||'').trim();
-      const pw=(pwRef.current?.value||'').trim();
-      // Check against all users (professor + TAs)
-      const allUsers=store.users||[];
-      // Also support legacy single-password login (backward compat)
-      const found=allUsers.find(u=>u.id===uid&&u.password===pw);
-      if(found){
-        setAdminRole(found.role);setAdminUser(found);setView('admin');return;
-      }
-      // Fallback: if only password matches professor (no username needed for backward compat)
-      const prof=allUsers.find(u=>u.role==='professor'&&u.password===pw);
-      if(prof&&!uid){
-        setAdminRole('professor');setAdminUser(prof);setView('admin');return;
-      }
-      alert(lang==='zh'?'帳號或密碼錯誤':'Invalid username or password');
-    };
-    return(
+  const renderAdminLoginView=()=>(
     <div className="min-h-screen flex items-center justify-center p-4 pt-20">
       <div className="w-full max-w-md animate-fade-in">
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-700">
@@ -1206,565 +1069,518 @@ const App=()=>{
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.admin_user_label}</label>
-              <input ref={userRef} type="text" defaultValue="" placeholder={t.admin_user_ph} className={inputCls}/>
+              <input ref={adminUserRef} type="text" placeholder={t.admin_user_ph} className={inputCls}/>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.admin_pw_label}</label>
-              <input ref={pwRef} type="password" defaultValue="" onKeyDown={e=>{if(e.key==='Enter')doLogin()}}
+              <input ref={adminPwRef} type="password" onKeyDown={e=>{if(e.key==='Enter') doAdminLogin()}}
                 placeholder={t.admin_pw_ph} className={inputCls}/>
             </div>
-            <button onClick={doLogin}
+            <button onClick={doAdminLogin}
               className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition">{t.admin_enter}</button>
-            <button onClick={()=>setView('login')} className="w-full py-2 text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
+            <button onClick={()=>{
+              if(adminUserRef.current) adminUserRef.current.value='';
+              if(adminPwRef.current) adminPwRef.current.value='';
+              setView('login');
+            }} className="w-full py-2 text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
           </div>
         </div>
-      </div>
-    </div>
-  )};
-
-  // ─── ADMIN VIEW ───
-  const isProf=adminRole==='professor';
-  const AdminView=()=>(
-    <div className="min-h-screen pt-20 pb-12 px-4">
-      <div className="max-w-5xl mx-auto animate-fade-in">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.admin_title}</h1>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isProf?'bg-[#004030]/10 text-[#004030] dark:bg-[#D8C3A5]/10 dark:text-[#D8C3A5]':'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-              {isProf?t.admin_role_prof:t.admin_role_ta}{adminUser?' · '+adminUser.name:''}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            {isProf&&<button onClick={()=>{if(confirm(t.admin_reset_confirm))resetStore()}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>}
-            <button onClick={()=>{setView('login');setAdminRole(null);setAdminUser(null)}} className="text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
-          </div>
-        </div>
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-slate-200 dark:bg-slate-700 rounded-xl p-1 overflow-x-auto">
-          {[{key:'setup',icon:<IconClipboard size={16}/>,label:t.admin_tab_setup},
-            {key:'codes',icon:<IconKey size={16}/>,label:t.admin_tab_codes},
-            {key:'results',icon:<IconBarChart size={16}/>,label:t.admin_tab_results},
-            ...(isProf?[{key:'ta',icon:<IconUsers size={16}/>,label:t.admin_tab_ta}]:[]),
-            {key:'gas',icon:<IconCode size={16}/>,label:t.admin_tab_gas}
-          ].map(tab=>(
-            <button key={tab.key} onClick={()=>setAdminTab(tab.key)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition whitespace-nowrap px-3
-                ${adminTab===tab.key?'bg-white dark:bg-slate-800 text-[#004030] dark:text-[#D8C3A5] shadow-sm':'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-              {tab.icon} <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* ═══ SETUP TAB ═══ */}
-        {adminTab==='setup'&&<div className="space-y-6">
-          {/* Assignment & Deadline & URL */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_assignment}</label>
-              <input type="text" defaultValue={store.assignment} onBlur={e=>updateStore({assignment:e.target.value})} placeholder={t.setup_assignment_ph} className={inputCls}/>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_deadline}</label>
-                <input type="text" defaultValue={store.deadline} onBlur={e=>updateStore({deadline:e.target.value})} placeholder={t.setup_deadline_ph} className={inputCls}/>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_eval_url}</label>
-                <input type="text" defaultValue={store.evalUrl} onBlur={e=>updateStore({evalUrl:e.target.value})} placeholder={t.setup_eval_url_ph} className={inputCls}/>
-              </div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_gas_url}</label>
-              <input type="text" defaultValue={store.gasUrl} onBlur={e=>updateStore({gasUrl:e.target.value})} placeholder={t.setup_gas_url_ph} className={inputCls}/>
-              <p className="text-xs text-slate-400 mt-1">{t.setup_gas_url_desc}</p>
-            </div>
-          </div>
-
-          {/* CSV/Multi-format Upload */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-1 flex items-center gap-2"><IconUpload size={18}/>{t.setup_upload_roster}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{t.setup_upload_roster_desc}</p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mb-3 font-mono bg-slate-50 dark:bg-slate-700 p-2 rounded-lg">{t.setup_csv_format}</p>
-            <input type="file" accept=".csv,.tsv,.xlsx,.xls,.docx,.pdf,.txt" onChange={handleRosterUpload}
-              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-[#004030] file:text-white dark:file:bg-[#D8C3A5] dark:file:text-[#004030] hover:file:opacity-90 cursor-pointer"/>
-            {parsing&&<p className="mt-2 text-sm text-amber-600 animate-pulse">{t.setup_parsing}</p>}
-            {parseMsg&&<p className={`mt-2 text-sm flex items-center gap-1 ${parseMsg.ok?'text-green-600 dark:text-green-400':'text-red-500'}`}>{parseMsg.ok?<><IconCheck size={16}/>{t.setup_csv_loaded.replace('{n}',parseMsg.n).replace('{g}',parseMsg.g)}</>:<><IconX size={16}/>{t.setup_parse_error.replace('{e}',parseMsg.e)}</>}</p>}
-          </div>
-
-          {/* Roster Preview Table */}
-          {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-5 py-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 border-b border-slate-200 dark:border-slate-700 flex flex-wrap justify-between items-center gap-2">
-              <h3 className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2">
-                <IconUsers size={18}/>{t.setup_roster_preview}
-                <span className="text-xs font-normal text-slate-500 font-sans">({store.students.length}{lang==='zh'?'人':'p'}, {groupNames.length}{lang==='zh'?'組':'g'})</span>
-              </h3>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">{t.setup_roster_edit_email}</span>
-                {isProf&&<button onClick={()=>{if(confirm(lang==='zh'?'確定清除學生名單？登入碼與提交記錄也會一併清除，此操作無法復原。':'Clear student roster? Login codes and submissions will also be cleared. This cannot be undone.'))updateStore({students:[],codes:{},submissions:{},groupScores:{}})}}
-                  className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>}
-              </div>
-            </div>
-            <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">#</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_id}</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_dept}</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_name_zh}</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_name_en}</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_group}</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_email}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {store.students.map((s,idx)=>{
-                    const isAuto=s.email===('s'+String(s.student_id).replace(/^s/i,'')+'@mail1.ncnu.edu.tw');
-                    return(
-                    <tr key={s.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 group">
-                      <td className="px-3 py-2 text-slate-400 text-xs">{idx+1}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300">{s.student_id}</td>
-                      <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{s.dept||'-'}</td>
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_zh}</td>
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_en}</td>
-                      <td className="px-3 py-2">
-                        <span className="px-2 py-0.5 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 text-[#004030] dark:text-[#D8C3A5] text-xs font-medium">{s.group}</span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <input type="text" defaultValue={s.email}
-                            onBlur={e=>{const newEmail=e.target.value.trim();if(newEmail&&newEmail!==s.email){
-                              updateStore({students:store.students.map(st=>st.student_id===s.student_id?{...st,email:newEmail}:st)})
-                            }}}
-                            className="text-xs font-mono bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-[#004030] dark:focus:border-[#D8C3A5] focus:outline-none text-slate-600 dark:text-slate-400 w-full min-w-[160px] py-0.5 transition"/>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${isAuto?'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400':'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'}`}>
-                            {isAuto?t.setup_roster_auto:t.setup_roster_manual}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>)
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>}
-
-          {/* Group Scores */}
-          {groupNames.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-1">{t.setup_group_score}</h3>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{t.setup_group_score_desc}</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {groupNames.map(g=><div key={g}>
-                <label className="text-xs font-medium text-slate-500 mb-1 block">{g} ({groups[g].length}{lang==='zh'?'人':'p'})</label>
-                <input type="number" defaultValue={store.groupScores[g]||''} onBlur={e=>updateStore({groupScores:{...store.groupScores,[g]:e.target.value}})}
-                  placeholder={t.setup_group_score_ph} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none text-sm"/>
-              </div>)}
-            </div>
-          </div>}
-
-          {/* Criteria */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">{t.setup_criteria_title}</h3>
-              <label className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium border border-dashed border-[#004030]/30 dark:border-[#D8C3A5]/30 rounded-lg text-[#004030] dark:text-[#D8C3A5] hover:bg-[#004030]/5 dark:hover:bg-[#D8C3A5]/5 cursor-pointer transition">
-                <IconFile size={14}/>{criteriaImporting?(t.setup_criteria_importing):t.setup_criteria_import}
-                <input type="file" accept=".csv,.tsv,.xlsx,.xls,.docx,.pdf,.txt" onChange={handleCriteriaImport} className="hidden"/>
-              </label>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">{t.setup_criteria_import_desc}</p>
-            <div className="space-y-4">
-              {store.criteria.map((c,idx)=>(
-                <div key={c.id} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">#{idx+1}</span>
-                    {isProf&&<button onClick={()=>removeCriterion(c.id)} className="text-red-400 hover:text-red-600 text-xs">{t.setup_remove}</button>}
-                  </div>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-xs text-slate-400 mb-0.5 block">{lang==='zh'?'名稱':'Name'}</label>
-                      <input key={c.id+'name'+lang} defaultValue={lang==='zh'?c.name_zh:c.name_en}
-                        onBlur={e=>updateCriterion(c.id,lang==='zh'?'name_zh':'name_en',e.target.value)}
-                        placeholder={lang==='zh'?t.setup_criterion_zh:t.setup_criterion_en}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400 mb-0.5 block">{lang==='zh'?'說明（Rubric）':'Description (Rubric)'}</label>
-                      <input key={c.id+'desc'+lang} defaultValue={lang==='zh'?c.desc_zh:c.desc_en}
-                        onBlur={e=>updateCriterion(c.id,lang==='zh'?'desc_zh':'desc_en',e.target.value)}
-                        placeholder={lang==='zh'?t.setup_criterion_desc_zh:t.setup_criterion_desc_en}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button onClick={addCriterion} className="mt-4 px-4 py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-sm text-slate-500 hover:border-[#004030] hover:text-[#004030] dark:hover:border-[#D8C3A5] dark:hover:text-[#D8C3A5] transition w-full">{t.setup_add_criterion}</button>
-          </div>
-
-          {/* Weight Range */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-3">{t.setup_weight_range}</h3>
-            <div className="flex gap-4 items-center">
-              <div><label className="text-xs text-slate-500 mb-1 block">{t.setup_weight_min}</label>
-                <input type="number" step="0.05" defaultValue={store.weightMin} onBlur={e=>updateStore({weightMin:parseFloat(e.target.value)||0.55})}
-                  className="w-24 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-center font-mono text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none"/></div>
-              <span className="text-slate-400 text-lg mt-5">~</span>
-              <div><label className="text-xs text-slate-500 mb-1 block">{t.setup_weight_max}</label>
-                <input type="number" step="0.05" defaultValue={store.weightMax} onBlur={e=>updateStore({weightMax:parseFloat(e.target.value)||1.45})}
-                  className="w-24 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-center font-mono text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none"/></div>
-              <span className="text-slate-400 text-sm mt-5">×</span>
-            </div>
-          </div>
-
-          <button onClick={()=>{saveStore(store);setSavedMsg(t.setup_saved);setTimeout(()=>setSavedMsg(''),2000)}}
-            className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition shadow-md">{t.setup_save}</button>
-          {savedMsg&&<p className="text-center text-green-600 dark:text-green-400 text-sm">{savedMsg}</p>}
-        </div>}
-
-        {/* ═══ CODES TAB ═══ */}
-        {adminTab==='codes'&&<div className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <button onClick={handleGenerateCodes} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconRefresh size={16}/>{t.codes_generate}</button>
-            {store.gasUrl ? (
-              <button onClick={handlePushToSheets} disabled={pushStatus==='pushing'}
-                className={`px-5 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-sm ${
-                  pushStatus==='done'?'bg-green-600 text-white':pushStatus==='pushing'?'bg-slate-300 text-slate-500 cursor-wait':'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
-                }`}>
-                <IconUpload size={16}/>
-                {pushStatus==='pushing'?t.codes_pushing:pushStatus==='done'?t.codes_push_done:pushStatus&&pushStatus.startsWith('error')?t.codes_push_error.replace('{e}',pushStatus.slice(6)):t.codes_push}
-              </button>
-            ) : (
-              <button onClick={handleCopyCodesForGAS} className="px-5 py-2.5 border-2 border-[#004030] dark:border-[#D8C3A5] text-[#004030] dark:text-[#D8C3A5] font-bold rounded-xl hover:bg-[#004030]/5 transition flex items-center gap-2 text-sm">
-                <IconCopy size={16}/>{codeCopied?t.codes_copy_done:t.codes_export_gas}
-              </button>
-            )}
-          </div>
-          {/* Info box */}
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-300">
-            {store.gasUrl
-              ?(lang==='zh'
-                ?'💡 流程：產生登入碼 → 點「推送到 Google Sheets」→ 收到確認 Email → 到 Sheets 執行寄信。'
-                :'💡 Workflow: Generate codes → Push to Google Sheets → Receive confirmation email → Run send in Sheets.')
-              :(lang==='zh'
-                ?'💡 流程：產生登入碼 → 點「一鍵複製」→ 貼入 Google Sheets → 執行 GAS 腳本寄信。若要自動化，請在「設定」填入 GAS Web App URL。'
-                :'💡 Workflow: Generate codes → Copy → Paste into Google Sheets → Run GAS. For automation, set GAS Web App URL in Setup.')
-            }
-          </div>
-          {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#004030] text-[#D8C3A5]">
-                  <tr><th className="px-4 py-3 text-left font-medium">{t.codes_student}</th><th className="px-4 py-3 text-left font-medium">{t.codes_group}</th><th className="px-4 py-3 text-left font-medium font-mono">{t.codes_code}</th><th className="px-4 py-3 text-center font-medium">{t.codes_status}</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {store.students.map(s=>(
-                    <tr key={s.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{lang==='zh'?`${s.name_zh} (${s.name_en})`:`${s.name_en} (${s.name_zh})`}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{s.group}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-400">{store.codes[s.student_id]||'-'}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        {store.submissions[s.student_id]
-                          ?<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium"><IconCheck size={12}/>{t.codes_submitted}</span>
-                          :<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium">{t.codes_pending}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>}
-        </div>}
-
-        {/* ═══ RESULTS TAB ═══ */}
-        {adminTab==='results'&&<div className="space-y-4">
-          {!computeResults?<div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700"><IconBarChart size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-3"/><p className="text-slate-500">{t.results_no_data}</p></div>
-          :<>
-            <div className="flex justify-end"><button onClick={handleExportResults} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconDownload size={16}/>{t.results_export}</button></div>
-            {groupNames.map(gName=>{
-              const gr=computeResults[gName];if(!gr)return null;
-              const sorted=Object.values(gr.members).sort((a,b)=>a.avgRank-b.avgRank);
-              return(<div key={gName} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="px-5 py-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <h3 className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2"><IconUsers size={18}/>{gName}</h3>
-                  <span className="text-xs text-slate-500">{t.results_submissions}: {gr.submitted}/{gr.total}</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-700/50">
-                      <tr><th className="px-4 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300">{t.results_student}</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_avg_rank}</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_percentile}</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_weight}</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_group_score}</th>
-                        <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_final_score}</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {sorted.map(r=>(
-                        <tr key={r.student.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                          <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{lang==='zh'?`${r.student.name_zh} (${r.student.name_en})`:`${r.student.name_en} (${r.student.name_zh})`}</td>
-                          <td className="px-4 py-2.5 text-center font-mono text-slate-600 dark:text-slate-400">{r.avgRank}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 mx-auto max-w-[80px]"><div className="bg-[#004030] dark:bg-[#D8C3A5] h-2 rounded-full" style={{width:r.percentile+'%'}}/></div>
-                            <span className="text-xs text-slate-500">{r.percentile}%</span>
-                          </td>
-                          <td className="px-4 py-2.5 text-center font-mono font-bold text-[#004030] dark:text-[#D8C3A5]">{r.weight}×</td>
-                          <td className="px-4 py-2.5 text-center text-slate-600 dark:text-slate-400">{r.groupScore||'-'}</td>
-                          <td className="px-4 py-2.5 text-center font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">{r.finalScore||'-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="px-5 py-2 border-t border-slate-100 dark:border-slate-700">
-                  <button onClick={()=>setDetailGroup(detailGroup===gName?null:gName)} className="text-xs text-[#004030] dark:text-[#D8C3A5] hover:underline">
-                    {detailGroup===gName?'▼':'▶'} {t.results_by_criterion}
-                  </button>
-                  {detailGroup===gName&&<div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-xs"><thead><tr className="bg-slate-100 dark:bg-slate-700"><th className="px-3 py-2 text-left">{t.results_student}</th>
-                      {store.criteria.map(c=><th key={c.id} className="px-3 py-2 text-center">{lang==='zh'?c.name_zh:c.name_en}</th>)}</tr></thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {sorted.map(r=><tr key={r.student.student_id}><td className="px-3 py-1.5">{lang==='zh'?r.student.name_zh:r.student.name_en}</td>
-                        {store.criteria.map(c=><td key={c.id} className="px-3 py-1.5 text-center font-mono">{r.criterionDetail[c.id]}</td>)}</tr>)}
-                    </tbody></table>
-                  </div>}
-                </div>
-              </div>);
-            })}
-          </>}
-        </div>}
-
-        {/* ═══ TA MANAGEMENT TAB (professor only) ═══ */}
-        {adminTab==='ta'&&isProf&&<div className="space-y-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-4">{t.admin_ta_title}</h3>
-            
-            {/* Professor account (read-only) */}
-            <div className="p-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-xl mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] flex items-center justify-center text-xs font-bold">P</span>
-                <div>
-                  <p className="text-sm font-medium text-[#004030] dark:text-[#D8C3A5]">{(store.users.find(u=>u.role==='professor')||{}).name||'Professor'}</p>
-                  <p className="text-xs text-slate-400">ID: {(store.users.find(u=>u.role==='professor')||{}).id||'prof'} · {t.admin_ta_prof_note}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* TA list */}
-            <div className="space-y-2 mb-4">
-              {store.users.filter(u=>u.role==='ta').length===0&&<p className="text-sm text-slate-400 text-center py-4">{t.admin_ta_none}</p>}
-              {store.users.filter(u=>u.role==='ta').map(ta=>(
-                <div key={ta.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl flex items-center justify-between border border-slate-200 dark:border-slate-600">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">TA</span>
-                    <div>
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{ta.name}</p>
-                      <p className="text-xs text-slate-400">ID: {ta.id}</p>
-                    </div>
-                  </div>
-                  <button onClick={()=>{if(confirm(t.admin_ta_remove_confirm))updateStore({users:store.users.filter(u=>u.id!==ta.id)})}}
-                    className="text-xs text-red-400 hover:text-red-600">{t.admin_ta_remove}</button>
-                </div>
-              ))}
-            </div>
-
-            {/* Add TA form */}
-            <div className="p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">{t.admin_ta_add}</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input id="ta-name" type="text" placeholder={t.admin_ta_name_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
-                <input id="ta-id" type="text" placeholder={t.admin_ta_id_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
-                <input id="ta-pw" type="text" placeholder={t.admin_ta_pw_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
-              </div>
-              <button onClick={()=>{
-                const name=document.getElementById('ta-name')?.value?.trim();
-                const id=document.getElementById('ta-id')?.value?.trim();
-                const pw=document.getElementById('ta-pw')?.value?.trim();
-                if(!name||!id||!pw){alert(lang==='zh'?'請填寫完整':'Please fill all fields');return}
-                if(store.users.find(u=>u.id===id)){alert(lang==='zh'?'帳號已存在':'Username already exists');return}
-                updateStore({users:[...store.users,{id,role:'ta',name,password:pw}]});
-                document.getElementById('ta-name').value='';
-                document.getElementById('ta-id').value='';
-                document.getElementById('ta-pw').value='';
-              }}
-                className="mt-3 px-5 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold hover:opacity-90 transition">{t.admin_ta_add}</button>
-            </div>
-          </div>
-        </div>}
-
-        {/* ═══ DEPLOY & GAS GUIDE TAB ═══ */}
-        {adminTab==='gas'&&<div className="space-y-6">
-          {/* Deploy Section */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.deploy_title}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-              {lang==='zh'?'將此 HTML 檔部署到 GitHub Pages，學生即可透過連結開啟互評。':'Deploy this HTML to GitHub Pages so students can access the evaluation via URL.'}
-            </p>
-            <div className="space-y-3">
-              {[
-                {step:t.deploy_step1,desc:t.deploy_step1_desc,icon:'1️⃣'},
-                {step:t.deploy_step2,desc:t.deploy_step2_desc,icon:'2️⃣'},
-                {step:t.deploy_step3,desc:t.deploy_step3_desc,icon:'3️⃣'},
-                {step:t.deploy_step4,desc:t.deploy_step4_desc,icon:'4️⃣'}
-              ].map((s,i)=>(
-                <div key={i} className="flex gap-3 items-start">
-                  <div className="w-9 h-9 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 flex items-center justify-center text-base shrink-0">{s.icon}</div>
-                  <div className="flex-1 pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                    <p className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">{s.step}</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{s.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Quick note about renaming */}
-            <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-300">
-              {lang==='zh'
-                ?'💡 重要：上傳前請將檔名改為 index.html，GitHub Pages 才會自動將它作為首頁。'
-                :'💡 Important: Rename the file to index.html before uploading — GitHub Pages serves it as the homepage.'}
-            </div>
-          </div>
-
-          {/* Email / GAS Section */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.email_title}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-              {lang==='zh'?'使用 Google Apps Script 自動寄出登入碼 Email 與催繳通知。':'Use Google Apps Script to auto-send login code emails and reminders.'}
-            </p>
-            <div className="space-y-3">
-              {[
-                {step:t.gas_step1,desc:t.gas_step1_desc,icon:'📊'},
-                {step:t.gas_step2,desc:t.gas_step2_desc,icon:'🔧'},
-                {step:t.gas_step3,desc:t.gas_step3_desc,icon:'📋'},
-                {step:t.gas_step4,desc:t.gas_step4_desc,icon:'⚙️'},
-                {step:t.gas_step5,desc:t.gas_step5_desc,icon:'▶️'},
-                {step:t.gas_step6,desc:t.gas_step6_desc,icon:'⏰'},
-                {step:t.gas_step7,desc:t.gas_step7_desc,icon:'🔗'}
-              ].map((s,i)=>(
-                <div key={i} className="flex gap-3 items-start">
-                  <div className="w-9 h-9 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 flex items-center justify-center text-base shrink-0">{s.icon}</div>
-                  <div className="flex-1 pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                    <p className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">{s.step}</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{s.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Auto-flow summary */}
-          <div className="bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-2xl p-5 border border-[#004030]/20 dark:border-[#D8C3A5]/20">
-            <p className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] text-sm mb-3">
-              {lang==='zh'?'📋 完整操作流程':'📋 Complete Workflow'}
-            </p>
-            <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1.5">
-              {(lang==='zh'?[
-                '1. 部署 HTML → 取得 URL → 填入設定頁',
-                '2. 上傳學生名單 CSV（email 自動產生）',
-                '3. 設定評分標準 & 各組分數',
-                '4. 「登入碼」頁 → 產生登入碼 → 一鍵複製',
-                '5. 貼入 Google Sheets → 執行 GAS 寄信',
-                '6. 學生收到 Email → 點連結 → 登入碼進入 → 拖移排序 → 送出',
-                '7. 「結果」頁查看 → 匯出成績 CSV',
-                '8. GAS 每日自動催繳未交者'
-              ]:[
-                '1. Deploy HTML → get URL → paste into Setup',
-                '2. Upload student roster CSV (email auto-generated)',
-                '3. Set rubric criteria & group scores',
-                '4. Codes tab → generate codes → one-click copy',
-                '5. Paste into Google Sheets → run GAS to send emails',
-                '6. Students receive email → click link → enter code → drag-rank → submit',
-                '7. Results tab → view & export CSV',
-                '8. GAS auto-reminds pending students daily'
-              ]).map((s,i)=><p key={i}>{s}</p>)}
-            </div>
-          </div>
-
-          {/* GAS Script box */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">Google Apps Script</h3>
-              <button onClick={()=>{navigator.clipboard.writeText(getFilledGAS());setGasCopied(true);setTimeout(()=>setGasCopied(false),2000)}}
-                className="px-4 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition">
-                <IconCopy size={14}/>{gasCopied?t.gas_copied:t.gas_copy_script}
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mb-3">
-              {lang==='zh'
-                ?'腳本已自動填入您在「設定」頁輸入的作業名稱、截止日期與互評 URL。'
-                :'Script is auto-filled with your assignment name, deadline, and eval URL from Setup.'}
-            </p>
-            <pre className="bg-slate-900 text-green-400 p-4 rounded-xl text-xs overflow-x-auto max-h-[400px] overflow-y-auto leading-relaxed">
-              {getFilledGAS()}
-            </pre>
-          </div>
-        </div>}
       </div>
     </div>
   );
 
-  // ─── EVAL VIEW ───
-  const EvalView=()=>{
+  const renderAdminView=()=>{
+    const isProf=adminRole==='professor';
+    return (
+      <div className="min-h-screen pt-20 pb-12 px-4">
+        <div className="max-w-5xl mx-auto animate-fade-in">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.admin_title}</h1>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isProf?'bg-[#004030]/10 text-[#004030] dark:bg-[#D8C3A5]/10 dark:text-[#D8C3A5]':'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                {isProf?t.admin_role_prof:t.admin_role_ta}{adminUser?' · '+adminUser.name:''}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {isProf&&<button onClick={()=>{if(confirm(t.admin_reset_confirm))resetStore()}} className="text-xs text-red-400 hover:text-red-600 transition">{t.admin_reset}</button>}
+              <button onClick={()=>{setView('login');setAdminRole(null);setAdminUser(null)}} className="text-sm text-slate-500 hover:text-[#004030] dark:hover:text-[#D8C3A5]">← {t.admin_back}</button>
+            </div>
+          </div>
+          
+          <div className="flex gap-1 mb-6 bg-slate-200 dark:bg-slate-700 rounded-xl p-1 overflow-x-auto">
+            {[{key:'setup',icon:<IconClipboard size={16}/>,label:t.admin_tab_setup},
+              {key:'codes',icon:<IconKey size={16}/>,label:t.admin_tab_codes},
+              {key:'results',icon:<IconBarChart size={16}/>,label:t.admin_tab_results},
+              ...(isProf?[{key:'ta',icon:<IconUsers size={16}/>,label:t.admin_tab_ta}]:[]),
+              {key:'gas',icon:<IconCode size={16}/>,label:t.admin_tab_gas}
+            ].map(tab=>(
+              <button key={tab.key} onClick={()=>setAdminTab(tab.key)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition whitespace-nowrap px-3
+                  ${adminTab===tab.key?'bg-white dark:bg-slate-800 text-[#004030] dark:text-[#D8C3A5] shadow-sm':'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                {tab.icon} <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {adminTab==='setup'&&<div className="space-y-6">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_assignment}</label>
+                <input type="text" defaultValue={store.assignment} onBlur={e=>updateStore({assignment:e.target.value})} placeholder={t.setup_assignment_ph} className={inputCls}/>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_deadline}</label>
+                  <input type="text" defaultValue={store.deadline} onBlur={e=>updateStore({deadline:e.target.value})} placeholder={t.setup_deadline_ph} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_eval_url}</label>
+                  <input type="text" defaultValue={store.evalUrl} onBlur={e=>updateStore({evalUrl:e.target.value})} placeholder={t.setup_eval_url_ph} className={inputCls}/>
+                </div>
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_gas_url}</label>
+                <input type="text" defaultValue={store.gasUrl} onBlur={e=>updateStore({gasUrl:e.target.value})} placeholder={t.setup_gas_url_ph} className={inputCls}/>
+                <p className="text-xs text-slate-400 mt-1">{t.setup_gas_url_desc}</p>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-1 flex items-center gap-2"><IconUpload size={18}/>{t.setup_upload_roster}</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">{t.setup_upload_roster_desc}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-3 font-mono bg-slate-50 dark:bg-slate-700 p-2 rounded-lg">{t.setup_csv_format}</p>
+              <input type="file" accept=".csv,.tsv,.xlsx,.xls,.docx,.pdf,.txt" onChange={handleRosterUpload}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-[#004030] file:text-white dark:file:bg-[#D8C3A5] dark:file:text-[#004030] hover:file:opacity-90 cursor-pointer"/>
+              {parsing&&<p className="mt-2 text-sm text-amber-600 animate-pulse">{t.setup_parsing}</p>}
+              {parseMsg&&<p className={`mt-2 text-sm flex items-center gap-1 ${parseMsg.ok?'text-green-600 dark:text-green-400':'text-red-500'}`}>{parseMsg.ok?<><IconCheck size={16}/>{t.setup_csv_loaded.replace('{n}',parseMsg.n).replace('{g}',parseMsg.g)}</>:<><IconX size={16}/>{t.setup_parse_error.replace('{e}',parseMsg.e)}</>}</p>}
+            </div>
+
+            {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="px-5 py-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 border-b border-slate-200 dark:border-slate-700 flex flex-wrap justify-between items-center gap-2">
+                <h3 className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2">
+                  <IconUsers size={18}/>{t.setup_roster_preview}
+                  <span className="text-xs font-normal text-slate-500 font-sans">({store.students.length}{lang==='zh'?'人':'p'}, {groupNames.length}{lang==='zh'?'組':'g'})</span>
+                </h3>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400">{t.setup_roster_edit_email}</span>
+                  {isProf&&<button onClick={()=>{if(confirm(lang==='zh'?'確定清除學生名單？登入碼與提交記錄也會一併清除，此操作無法復原。':'Clear student roster? Login codes and submissions will also be cleared. This cannot be undone.'))updateStore({students:[],codes:{},submissions:{},groupScores:{}})}}
+                    className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>}
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">#</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_id}</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_dept}</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_name_zh}</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_name_en}</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_group}</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_email}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {store.students.map((s,idx)=>{
+                      const isAuto=s.email===('s'+String(s.student_id).replace(/^s/i,'')+'@mail1.ncnu.edu.tw');
+                      return(
+                      <tr key={s.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 group">
+                        <td className="px-3 py-2 text-slate-400 text-xs">{idx+1}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300">{s.student_id}</td>
+                        <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{s.dept||'-'}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_zh}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{s.name_en}</td>
+                        <td className="px-3 py-2">
+                          <span className="px-2 py-0.5 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 text-[#004030] dark:text-[#D8C3A5] text-xs font-medium">{s.group}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <input type="text" defaultValue={s.email}
+                              onBlur={e=>{const newEmail=e.target.value.trim();if(newEmail&&newEmail!==s.email){
+                                updateStore({students:store.students.map(st=>st.student_id===s.student_id?{...st,email:newEmail}:st)})
+                              }}}
+                              className="text-xs font-mono bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-[#004030] dark:focus:border-[#D8C3A5] focus:outline-none text-slate-600 dark:text-slate-400 w-full min-w-[160px] py-0.5 transition"/>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${isAuto?'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400':'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'}`}>
+                              {isAuto?t.setup_roster_auto:t.setup_roster_manual}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>)
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>}
+
+            {groupNames.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-1">{t.setup_group_score}</h3>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{t.setup_group_score_desc}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {groupNames.map(g=><div key={g}>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">{g} ({groups[g].length}{lang==='zh'?'人':'p'})</label>
+                  <input type="number" defaultValue={store.groupScores[g]||''} onBlur={e=>updateStore({groupScores:{...store.groupScores,[g]:e.target.value}})}
+                    placeholder={t.setup_group_score_ph} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none text-sm"/>
+                </div>)}
+              </div>
+            </div>}
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">{t.setup_criteria_title}</h3>
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium border border-dashed border-[#004030]/30 dark:border-[#D8C3A5]/30 rounded-lg text-[#004030] dark:text-[#D8C3A5] hover:bg-[#004030]/5 dark:hover:bg-[#D8C3A5]/5 cursor-pointer transition">
+                  <IconFile size={14}/>{criteriaImporting?(t.setup_criteria_importing):t.setup_criteria_import}
+                  <input type="file" accept=".csv,.tsv,.xlsx,.xls,.docx,.pdf,.txt" onChange={handleCriteriaImport} className="hidden"/>
+                </label>
+              </div>
+              <p className="text-xs text-slate-400 mb-4">{t.setup_criteria_import_desc}</p>
+              <div className="space-y-4">
+                {store.criteria.map((c,idx)=>(
+                  <div key={c.id} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">#{idx+1}</span>
+                      {isProf&&<button onClick={()=>removeCriterion(c.id)} className="text-red-400 hover:text-red-600 text-xs">{t.setup_remove}</button>}
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-xs text-slate-400 mb-0.5 block">{lang==='zh'?'名稱':'Name'}</label>
+                        <input key={c.id+'name'+lang} defaultValue={lang==='zh'?c.name_zh:c.name_en}
+                          onBlur={e=>updateCriterion(c.id,lang==='zh'?'name_zh':'name_en',e.target.value)}
+                          placeholder={lang==='zh'?t.setup_criterion_zh:t.setup_criterion_en}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 mb-0.5 block">{lang==='zh'?'說明（Rubric）':'Description (Rubric)'}</label>
+                        <input key={c.id+'desc'+lang} defaultValue={lang==='zh'?c.desc_zh:c.desc_en}
+                          onBlur={e=>updateCriterion(c.id,lang==='zh'?'desc_zh':'desc_en',e.target.value)}
+                          placeholder={lang==='zh'?t.setup_criterion_desc_zh:t.setup_criterion_desc_en}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={addCriterion} className="mt-4 px-4 py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-sm text-slate-500 hover:border-[#004030] hover:text-[#004030] dark:hover:border-[#D8C3A5] dark:hover:text-[#D8C3A5] transition w-full">{t.setup_add_criterion}</button>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-3">{t.setup_weight_range}</h3>
+              <div className="flex gap-4 items-center">
+                <div><label className="text-xs text-slate-500 mb-1 block">{t.setup_weight_min}</label>
+                  <input type="number" step="0.05" defaultValue={store.weightMin} onBlur={e=>updateStore({weightMin:parseFloat(e.target.value)||0.55})}
+                    className="w-24 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-center font-mono text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none"/></div>
+                <span className="text-slate-400 text-lg mt-5">~</span>
+                <div><label className="text-xs text-slate-500 mb-1 block">{t.setup_weight_max}</label>
+                  <input type="number" step="0.05" defaultValue={store.weightMax} onBlur={e=>updateStore({weightMax:parseFloat(e.target.value)||1.45})}
+                    className="w-24 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm text-center font-mono text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none"/></div>
+                <span className="text-slate-400 text-sm mt-5">×</span>
+              </div>
+            </div>
+
+            <button onClick={()=>{saveStore(store);setSavedMsg(t.setup_saved);setTimeout(()=>setSavedMsg(''),2000)}}
+              className="w-full py-3 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold rounded-xl hover:opacity-90 transition shadow-md">{t.setup_save}</button>
+            {savedMsg&&<p className="text-center text-green-600 dark:text-green-400 text-sm">{savedMsg}</p>}
+          </div>}
+
+          {adminTab==='codes'&&<div className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <button onClick={handleGenerateCodes} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconRefresh size={16}/>{t.codes_generate}</button>
+              {store.gasUrl ? (
+                <button onClick={handlePushToSheets} disabled={pushStatus==='pushing'}
+                  className={`px-5 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-sm ${
+                    pushStatus==='done'?'bg-green-600 text-white':pushStatus==='pushing'?'bg-slate-300 text-slate-500 cursor-wait':'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
+                  }`}>
+                  <IconUpload size={16}/>
+                  {pushStatus==='pushing'?t.codes_pushing:pushStatus==='done'?t.codes_push_done:pushStatus&&pushStatus.startsWith('error')?t.codes_push_error.replace('{e}',pushStatus.slice(6)):t.codes_push}
+                </button>
+              ) : (
+                <button onClick={handleCopyCodesForGAS} className="px-5 py-2.5 border-2 border-[#004030] dark:border-[#D8C3A5] text-[#004030] dark:text-[#D8C3A5] font-bold rounded-xl hover:bg-[#004030]/5 transition flex items-center gap-2 text-sm">
+                  <IconCopy size={16}/>{codeCopied?t.codes_copy_done:t.codes_export_gas}
+                </button>
+              )}
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-300">
+              {store.gasUrl
+                ?(lang==='zh'?'💡 流程：產生登入碼 → 點「推送到 Google Sheets」→ 收到確認 Email → 到 Sheets 執行寄信。':'💡 Workflow: Generate codes → Push to Google Sheets → Receive confirmation email → Run send in Sheets.')
+                :(lang==='zh'?'💡 流程：產生登入碼 → 點「一鍵複製」→ 貼入 Google Sheets → 執行 GAS 腳本寄信。若要自動化，請在「設定」填入 GAS Web App URL。':'💡 Workflow: Generate codes → Copy → Paste into Google Sheets → Run GAS. For automation, set GAS Web App URL in Setup.')
+              }
+            </div>
+            {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#004030] text-[#D8C3A5]">
+                    <tr><th className="px-4 py-3 text-left font-medium">{t.codes_student}</th><th className="px-4 py-3 text-left font-medium">{t.codes_group}</th><th className="px-4 py-3 text-left font-medium font-mono">{t.codes_code}</th><th className="px-4 py-3 text-center font-medium">{t.codes_status}</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {store.students.map(s=>(
+                      <tr key={s.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{lang==='zh'?`${s.name_zh} (${s.name_en})`:`${s.name_en} (${s.name_zh})`}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{s.group}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-400">{store.codes[s.student_id]||'-'}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          {store.submissions[s.student_id]
+                            ?<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium"><IconCheck size={12}/>{t.codes_submitted}</span>
+                            :<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium">{t.codes_pending}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>}
+          </div>}
+
+          {adminTab==='results'&&<div className="space-y-4">
+            {!computeResults?<div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700"><IconBarChart size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-3"/><p className="text-slate-500">{t.results_no_data}</p></div>
+            :<>
+              <div className="flex justify-end"><button onClick={handleExportResults} className="px-5 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-bold rounded-xl hover:opacity-90 transition flex items-center gap-2 text-sm"><IconDownload size={16}/>{t.results_export}</button></div>
+              {groupNames.map(gName=>{
+                const gr=computeResults[gName];if(!gr)return null;
+                const sorted=Object.values(gr.members).sort((a,b)=>a.avgRank-b.avgRank);
+                return(<div key={gName} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <div className="px-5 py-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <h3 className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2"><IconUsers size={18}/>{gName}</h3>
+                    <span className="text-xs text-slate-500">{t.results_submissions}: {gr.submitted}/{gr.total}</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-700/50">
+                        <tr><th className="px-4 py-2.5 text-left font-medium text-slate-600 dark:text-slate-300">{t.results_student}</th>
+                          <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_avg_rank}</th>
+                          <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_percentile}</th>
+                          <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_weight}</th>
+                          <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_group_score}</th>
+                          <th className="px-4 py-2.5 text-center font-medium text-slate-600 dark:text-slate-300">{t.results_final_score}</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {sorted.map(r=>(
+                          <tr key={r.student.student_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{lang==='zh'?`${r.student.name_zh} (${r.student.name_en})`:`${r.student.name_en} (${r.student.name_zh})`}</td>
+                            <td className="px-4 py-2.5 text-center font-mono text-slate-600 dark:text-slate-400">{r.avgRank}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 mx-auto max-w-[80px]"><div className="bg-[#004030] dark:bg-[#D8C3A5] h-2 rounded-full" style={{width:r.percentile+'%'}}/></div>
+                              <span className="text-xs text-slate-500">{r.percentile}%</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-center font-mono font-bold text-[#004030] dark:text-[#D8C3A5]">{r.weight}×</td>
+                            <td className="px-4 py-2.5 text-center text-slate-600 dark:text-slate-400">{r.groupScore||'-'}</td>
+                            <td className="px-4 py-2.5 text-center font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">{r.finalScore||'-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="px-5 py-2 border-t border-slate-100 dark:border-slate-700">
+                    <button onClick={()=>setDetailGroup(detailGroup===gName?null:gName)} className="text-xs text-[#004030] dark:text-[#D8C3A5] hover:underline">
+                      {detailGroup===gName?'▼':'▶'} {t.results_by_criterion}
+                    </button>
+                    {detailGroup===gName&&<div className="mt-3 overflow-x-auto">
+                      <table className="w-full text-xs"><thead><tr className="bg-slate-100 dark:bg-slate-700"><th className="px-3 py-2 text-left">{t.results_student}</th>
+                        {store.criteria.map(c=><th key={c.id} className="px-3 py-2 text-center">{lang==='zh'?c.name_zh:c.name_en}</th>)}</tr></thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {sorted.map(r=><tr key={r.student.student_id}><td className="px-3 py-1.5">{lang==='zh'?r.student.name_zh:r.student.name_en}</td>
+                          {store.criteria.map(c=><td key={c.id} className="px-3 py-1.5 text-center font-mono">{r.criterionDetail[c.id]}</td>)}</tr>)}
+                      </tbody></table>
+                    </div>}
+                  </div>
+                </div>);
+              })}
+            </>}
+          </div>}
+
+          {adminTab==='ta'&&isProf&&<div className="space-y-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-4">{t.admin_ta_title}</h3>
+              <div className="p-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-xl mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-full bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] flex items-center justify-center text-xs font-bold">P</span>
+                  <div>
+                    <p className="text-sm font-medium text-[#004030] dark:text-[#D8C3A5]">{(store.users.find(u=>u.role==='professor')||{}).name||'Professor'}</p>
+                    <p className="text-xs text-slate-400">ID: {(store.users.find(u=>u.role==='professor')||{}).id||'prof'} · {t.admin_ta_prof_note}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                {store.users.filter(u=>u.role==='ta').length===0&&<p className="text-sm text-slate-400 text-center py-4">{t.admin_ta_none}</p>}
+                {store.users.filter(u=>u.role==='ta').map(ta=>(
+                  <div key={ta.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl flex items-center justify-between border border-slate-200 dark:border-slate-600">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">TA</span>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{ta.name}</p>
+                        <p className="text-xs text-slate-400">ID: {ta.id}</p>
+                      </div>
+                    </div>
+                    <button onClick={()=>{if(confirm(t.admin_ta_remove_confirm))updateStore({users:store.users.filter(u=>u.id!==ta.id)})}}
+                      className="text-xs text-red-400 hover:text-red-600">{t.admin_ta_remove}</button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-3">{t.admin_ta_add}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input ref={newTaNameRef} type="text" placeholder={t.admin_ta_name_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                  <input ref={newTaIdRef} type="text" placeholder={t.admin_ta_id_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                  <input ref={newTaPwRef} type="text" placeholder={t.admin_ta_pw_ph} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#004030] focus:outline-none text-slate-800 dark:text-slate-200"/>
+                </div>
+                <button onClick={()=>{
+                  const name = newTaNameRef.current?.value?.trim();
+                  const id = newTaIdRef.current?.value?.trim();
+                  const pw = newTaPwRef.current?.value?.trim();
+                  if(!name||!id||!pw){alert(lang==='zh'?'請填寫完整':'Please fill all fields');return}
+                  if(store.users.find(u=>u.id===id)){alert(lang==='zh'?'帳號已存在':'Username already exists');return}
+                  updateStore({users:[...store.users,{id,role:'ta',name,password:pw}]});
+                  if(newTaNameRef.current) newTaNameRef.current.value='';
+                  if(newTaIdRef.current) newTaIdRef.current.value='';
+                  if(newTaPwRef.current) newTaPwRef.current.value='';
+                }}
+                  className="mt-3 px-5 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold hover:opacity-90 transition">{t.admin_ta_add}</button>
+              </div>
+            </div>
+          </div>}
+
+          {adminTab==='gas'&&<div className="space-y-6">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.deploy_title}</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">{lang==='zh'?'將此 HTML 檔部署到 GitHub Pages，學生即可透過連結開啟互評。':'Deploy this HTML to GitHub Pages so students can access the evaluation via URL.'}</p>
+              <div className="space-y-3">
+                {[
+                  {step:t.deploy_step1,desc:t.deploy_step1_desc,icon:'1️⃣'},
+                  {step:t.deploy_step2,desc:t.deploy_step2_desc,icon:'2️⃣'},
+                  {step:t.deploy_step3,desc:t.deploy_step3_desc,icon:'3️⃣'},
+                  {step:t.deploy_step4,desc:t.deploy_step4_desc,icon:'4️⃣'}
+                ].map((s,i)=>(
+                  <div key={i} className="flex gap-3 items-start">
+                    <div className="w-9 h-9 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 flex items-center justify-center text-base shrink-0">{s.icon}</div>
+                    <div className="flex-1 pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                      <p className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">{s.step}</p>
+                      <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{s.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-300">
+                {lang==='zh'?'💡 重要：上傳前請將檔名改為 index.html，GitHub Pages 才會自動將它作為首頁。':'💡 Important: Rename the file to index.html before uploading — GitHub Pages serves it as the homepage.'}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <h2 className="font-serif font-bold text-xl text-[#004030] dark:text-[#D8C3A5] mb-2">{t.email_title}</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">{lang==='zh'?'使用 Google Apps Script 自動寄出登入碼 Email 與催繳通知。':'Use Google Apps Script to auto-send login code emails and reminders.'}</p>
+              <div className="space-y-3">
+                {[
+                  {step:t.gas_step1,desc:t.gas_step1_desc,icon:'📊'}, {step:t.gas_step2,desc:t.gas_step2_desc,icon:'🔧'},
+                  {step:t.gas_step3,desc:t.gas_step3_desc,icon:'📋'}, {step:t.gas_step4,desc:t.gas_step4_desc,icon:'⚙️'},
+                  {step:t.gas_step5,desc:t.gas_step5_desc,icon:'▶️'}, {step:t.gas_step6,desc:t.gas_step6_desc,icon:'⏰'},
+                  {step:t.gas_step7,desc:t.gas_step7_desc,icon:'🔗'}
+                ].map((s,i)=>(
+                  <div key={i} className="flex gap-3 items-start">
+                    <div className="w-9 h-9 rounded-full bg-[#004030]/10 dark:bg-[#D8C3A5]/10 flex items-center justify-center text-base shrink-0">{s.icon}</div>
+                    <div className="flex-1 pb-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                      <p className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm">{s.step}</p>
+                      <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{s.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#004030]/5 dark:bg-[#D8C3A5]/5 rounded-2xl p-5 border border-[#004030]/20 dark:border-[#D8C3A5]/20">
+              <p className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] text-sm mb-3">{lang==='zh'?'📋 完整操作流程':'📋 Complete Workflow'}</p>
+              <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1.5">
+                {(lang==='zh'?[
+                  '1. 部署 HTML → 取得 URL → 填入設定頁', '2. 上傳學生名單 CSV（email 自動產生）', '3. 設定評分標準 & 各組分數',
+                  '4. 「登入碼」頁 → 產生登入碼 → 一鍵複製', '5. 貼入 Google Sheets → 執行 GAS 寄信',
+                  '6. 學生收到 Email → 點連結 → 登入碼進入 → 拖移排序 → 送出', '7. 「結果」頁查看 → 匯出成績 CSV', '8. GAS 每日自動催繳未交者'
+                ]:[
+                  '1. Deploy HTML → get URL → paste into Setup', '2. Upload student roster CSV (email auto-generated)', '3. Set rubric criteria & group scores',
+                  '4. Codes tab → generate codes → one-click copy', '5. Paste into Google Sheets → run GAS to send emails',
+                  '6. Students receive email → click link → enter code → drag-rank → submit', '7. Results tab → view & export CSV', '8. GAS auto-reminds pending students daily'
+                ]).map((s,i)=><p key={i}>{s}</p>)}
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5]">Google Apps Script</h3>
+                <button onClick={()=>{navigator.clipboard.writeText(getFilledGAS());setGasCopied(true);setTimeout(()=>setGasCopied(false),2000)}}
+                  className="px-4 py-2 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition">
+                  <IconCopy size={14}/>{gasCopied?t.gas_copied:t.gas_copy_script}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">{lang==='zh'?'腳本已自動填入您在「設定」頁輸入的作業名稱、截止日期與互評 URL。':'Script is auto-filled with your assignment name, deadline, and eval URL from Setup.'}</p>
+              <pre className="bg-slate-900 text-green-400 p-4 rounded-xl text-xs overflow-x-auto max-h-[400px] overflow-y-auto leading-relaxed">
+                {getFilledGAS()}
+              </pre>
+            </div>
+          </div>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderEvalView=()=>{
     const user=store.students.find(s=>s.student_id===currentUser);
     if(!user)return null;
     const gm=groups[user.group]||[];
     return(
-    <div className="min-h-screen pt-20 pb-12 px-4">
-      <div className="max-w-3xl mx-auto animate-fade-in">
-        <div className="mb-6">
-          <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.eval_title}</h1>
-          {store.assignment&&<p className="text-slate-500 text-sm mt-1">{store.assignment}</p>}
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 p-3 rounded-xl">{t.eval_instruction}</p>
-        </div>
-        <div className="space-y-8">
-          {store.criteria.map((c,idx)=>(
-            <div key={c.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-              <div className="mb-4">
-                <h2 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] text-xs flex items-center justify-center font-bold">{idx+1}</span>
-                  {lang==='zh'?c.name_zh:c.name_en}
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-9">{lang==='zh'?c.desc_zh:c.desc_en}</p>
+      <div className="min-h-screen pt-20 pb-12 px-4">
+        <div className="max-w-3xl mx-auto animate-fade-in">
+          <div className="mb-6">
+            <h1 className="font-serif font-bold text-2xl text-[#004030] dark:text-[#D8C3A5]">{t.eval_title}</h1>
+            {store.assignment&&<p className="text-slate-500 text-sm mt-1">{store.assignment}</p>}
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 p-3 rounded-xl">{t.eval_instruction}</p>
+          </div>
+          <div className="space-y-8">
+            {store.criteria.map((c,idx)=>(
+              <div key={c.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="mb-4">
+                  <h2 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-full bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] text-xs flex items-center justify-center font-bold">{idx+1}</span>
+                    {lang==='zh'?c.name_zh:c.name_en}
+                  </h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-9">{lang==='zh'?c.desc_zh:c.desc_en}</p>
+                </div>
+                <RankingBoard key={c.id} members={gm} currentUser={currentUser} lang={lang}
+                  onRankingChange={r=>handleRankingChange(c.id,r)} existingRanking={null}/>
               </div>
-              <RankingBoard key={c.id} members={gm} currentUser={currentUser} lang={lang}
-                onRankingChange={r=>handleRankingChange(c.id,r)} existingRanking={null}/>
+            ))}
+          </div>
+          <div className="mt-8">
+            <button onClick={handleSubmitEval} className="w-full py-4 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold text-lg rounded-xl hover:opacity-90 transition shadow-lg">{t.eval_submit}</button>
+          </div>
+        </div>
+        {showConfirm&&<div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fade-in border border-slate-200 dark:border-slate-700">
+            <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-3">{t.eval_confirm_title}</h3>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">{t.eval_confirm_msg}</p>
+            <div className="mb-6 space-y-3 max-h-60 overflow-y-auto">
+              {store.criteria.map(c=>{
+                const ranking=evalRankings[c.id];if(!ranking)return null;
+                const cal=calibrateRanks(ranking,gm.length);
+                const sorted=Object.entries(cal).sort((a,b)=>a[1]-b[1]);
+                return(<div key={c.id} className="text-sm">
+                  <p className="font-medium text-[#004030] dark:text-[#D8C3A5] mb-1">{lang==='zh'?c.name_zh:c.name_en}</p>
+                  <div className="flex flex-wrap gap-1.5">{sorted.map(([sid,rank])=>{
+                    const m=store.students.find(s=>s.student_id===sid);
+                    return(<span key={sid} className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg">
+                      <span className="font-bold text-[#004030] dark:text-[#D8C3A5]">{rank}</span>{' '}{lang==='zh'?m?.name_zh:m?.name_en}
+                    </span>)
+                  })}</div>
+                </div>)
+              })}
             </div>
-          ))}
-        </div>
-        <div className="mt-8">
-          <button onClick={handleSubmitEval} className="w-full py-4 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold text-lg rounded-xl hover:opacity-90 transition shadow-lg">{t.eval_submit}</button>
-        </div>
+            <div className="flex gap-3">
+              <button onClick={()=>setShowConfirm(false)} className="flex-1 py-2.5 border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm">{t.eval_confirm_no}</button>
+              <button onClick={confirmSubmit} className="flex-1 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-xl font-bold hover:opacity-90 transition text-sm">{t.eval_confirm_yes}</button>
+            </div>
+          </div>
+        </div>}
       </div>
-      {/* Confirm Modal */}
-      {showConfirm&&<div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fade-in border border-slate-200 dark:border-slate-700">
-          <h3 className="font-serif font-bold text-lg text-[#004030] dark:text-[#D8C3A5] mb-3">{t.eval_confirm_title}</h3>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">{t.eval_confirm_msg}</p>
-          <div className="mb-6 space-y-3 max-h-60 overflow-y-auto">
-            {store.criteria.map(c=>{
-              const ranking=evalRankings[c.id];if(!ranking)return null;
-              const cal=calibrateRanks(ranking,gm.length);
-              const sorted=Object.entries(cal).sort((a,b)=>a[1]-b[1]);
-              return(<div key={c.id} className="text-sm">
-                <p className="font-medium text-[#004030] dark:text-[#D8C3A5] mb-1">{lang==='zh'?c.name_zh:c.name_en}</p>
-                <div className="flex flex-wrap gap-1.5">{sorted.map(([sid,rank])=>{
-                  const m=store.students.find(s=>s.student_id===sid);
-                  return(<span key={sid} className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg">
-                    <span className="font-bold text-[#004030] dark:text-[#D8C3A5]">{rank}</span>{' '}{lang==='zh'?m?.name_zh:m?.name_en}
-                  </span>)
-                })}</div>
-              </div>)
-            })}
-          </div>
-          <div className="flex gap-3">
-            <button onClick={()=>setShowConfirm(false)} className="flex-1 py-2.5 border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm">{t.eval_confirm_no}</button>
-            <button onClick={confirmSubmit} className="flex-1 py-2.5 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] rounded-xl font-bold hover:opacity-90 transition text-sm">{t.eval_confirm_yes}</button>
-          </div>
-        </div>
-      </div>}
-    </div>
-  )};
+    );
+  };
 
-  // ─── SUCCESS VIEW ───
-  const SuccessView=()=>(
+  const renderSuccessView=()=>(
     <div className="min-h-screen flex items-center justify-center p-4 pt-20">
       <div className="text-center animate-fade-in">
         <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center"><IconCheck size={40} className="text-green-600 dark:text-green-400"/></div>
@@ -1776,15 +1592,15 @@ const App=()=>{
 
   return(
     <div className="flex flex-col min-h-screen">
-      <Header/>
+      {renderHeader()}
       <main className="flex-1">
-        {view==='login'&&<LoginView/>}
-        {view==='admin_login'&&<AdminLoginView/>}
-        {view==='admin'&&<AdminView/>}
-        {view==='eval'&&<EvalView/>}
-        {view==='success'&&<SuccessView/>}
+        {view==='login'&&renderLoginView()}
+        {view==='admin_login'&&renderAdminLoginView()}
+        {view==='admin'&&renderAdminView()}
+        {view==='eval'&&renderEvalView()}
+        {view==='success'&&renderSuccessView()}
       </main>
-      <Footer/>
+      {renderFooter()}
     </div>
   );
 };
