@@ -204,7 +204,7 @@ const CONFIG = {
 };
 
 function sendLoginCodes() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   const data = sheet.getDataRange().getValues();
   const C = CONFIG.COL;
   let sent = 0;
@@ -234,7 +234,7 @@ function sendLoginCodes() {
 }
 
 function sendReminders() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   const data = sheet.getDataRange().getValues();
   const C = CONFIG.COL;
   let sent = 0;
@@ -273,7 +273,7 @@ function onOpen() {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
     
     if (data.action === 'push_codes') {
       // Clear existing data and write new
