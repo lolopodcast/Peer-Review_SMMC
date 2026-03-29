@@ -56,6 +56,9 @@ window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1
 .rank-2{background:linear-gradient(135deg,#C0C0C0,#A0A0A0);color:#333}
 .rank-3{background:linear-gradient(135deg,#CD7F32,#B87333);color:#fff}
 .rank-other{background:#e2e8f0;color:#475569}.dark .rank-other{background:#334155;color:#94a3b8}
+
+/* 殘影清除專用 class */
+.peer-ghost-chip { pointer-events: none; z-index: 9999; }
 </style>
 </head>
 <body class="bg-[#f4f4f4] dark:bg-[#121212] min-h-screen text-slate-800 dark:text-slate-200">
@@ -65,7 +68,7 @@ const{useState,useEffect,useRef,useCallback,useMemo}=React;
 
 // ─── 雲端連線工具 (Cloud API Wrapper) ───
 const apiFetch = async (payload) => {
-  if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL");
+  if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL，無法執行雲端功能。");
   const res = await fetch(window.CLOUD_GAS_URL, {
     method: 'POST',
     redirect: 'follow', 
@@ -101,6 +104,7 @@ setup_csv_format:"欄位需含：學號、系級、中文姓名、英文姓名�
 setup_csv_loaded:"已載入 {n} 位學生，{g} 個小組",
 setup_roster_preview:"名單預覽",setup_roster_dept:"系級",setup_roster_id:"學號",setup_roster_name_zh:"中文名",setup_roster_name_en:"英文名",setup_roster_email:"Email",setup_roster_group:"組別",setup_roster_auto:"自動",setup_roster_manual:"手動",setup_roster_clear:"清除名單",setup_roster_edit_email:"點擊 Email 可手動修改",
 setup_parsing:"解析中...",setup_parse_error:"解析失敗：{e}",
+setup_manual_add:"手動新增學生",setup_manual_add_btn:"新增",setup_manual_req:"請填寫學號、中文名與組別",setup_manual_dup:"學號已存在",
 setup_criteria_title:"自訂評分標準",
 setup_criteria_import:"匯入評分標準",
 setup_criteria_import_desc:"上傳文件 (PDF/Word/Excel等)，系統將自動擷取",
@@ -109,23 +113,25 @@ setup_add_criterion:"+ 新增評分項目",
 setup_criterion_zh:"中文名稱",setup_criterion_en:"English Name",
 setup_criterion_desc_zh:"中文說明",setup_criterion_desc_en:"English Description",
 setup_remove:"移除",setup_weight_range:"加權因子範圍",setup_weight_min:"最低",setup_weight_max:"最高",
-setup_save:"儲存設定",setup_saved:"設定已儲存！",
+setup_save:"儲存設定",setup_saved:"設定已儲存！",setup_ta_save_confirm:"您目前以「助教 (TA)」身分修改設定，確定要儲存覆蓋嗎？",
 setup_assignment:"作業名稱",setup_assignment_ph:"例：期中報告",
-setup_group_score:"小組作業成績",setup_group_score_ph:"例：85",setup_group_score_desc:"互評加權因子 × 此成績 = 個人得分",
+setup_group_score:"小組作業成績 (預設為 1)",setup_group_score_ph:"例：85",setup_group_score_desc:"互評加權因子 × 此成績 = 個人得分",
 setup_deadline:"截止日期 (預設 23:59 截止)",setup_deadline_ph:"例：2026-04-15",
-setup_eval_url:"互評網頁 URL",setup_eval_url_ph:"部署後的網址",
+setup_eval_url:"互評網頁 URL",setup_eval_url_ph:"部署後的 GitHub Pages 網址",
+setup_sheets_url:"Google Sheets 雲端網址 (選填)",setup_sheets_url_ph:"貼上試算表網址方便快速開啟",
+setup_allow_resubmit:"允許學生在截止前重新登入並覆蓋成績",
 codes_title:"登入碼管理",codes_generate:"產生登入碼",
 codes_export_gas:"複製資料",codes_export_csv:"匯出 CSV",codes_copy_done:"已複製！",
 codes_push:"推送到雲端資料庫",codes_pushing:"推送中...",codes_push_done:"推播成功！",codes_push_error:"推送失敗：{e}",
 codes_cloud_send:"雲端寄發登入碼", codes_cloud_remind:"雲端寄發催繳信", codes_sending:"寄信中...",
 codes_send_confirm:"確定要透過雲端寄發信件給學生嗎？\n(請確保名單已推送到雲端)",
-codes_status:"狀態",codes_submitted:"已提交",codes_pending:"未提交",
+codes_sync:"同步雲端狀態",codes_status:"狀態",codes_submitted:"已提交",codes_pending:"未提交",
 codes_code:"登入碼",codes_student:"學生",codes_group:"組別",
 eval_title:"互評作業",eval_criterion:"評分項目",
 eval_instruction:"請將組員拖移至排序欄位（1 = 最佳，數字可並列）",
 eval_pool:"待排序組員",eval_rank:"第 {n} 名",
 eval_submit:"送出互評",eval_confirm_title:"確認送出",
-eval_confirm_msg:"排序已自動校準。確認後無法修改，是否送出？",
+eval_confirm_msg:"同分名次將取平均值校準。確認後是否送出？",
 eval_confirm_yes:"確認送出",eval_confirm_no:"返回修改",
 eval_success:"互評已送出，感謝您！",eval_incomplete:"請完成所有項目的排序",
 eval_self_note:"(自己)",
@@ -134,17 +140,18 @@ results_avg_rank:"平均",results_percentile:"百分位",results_weight:"加權"
 results_group_score:"組成績",results_final_score:"個人得分",
 results_submissions:"進度",results_export:"匯出 CSV",
 results_no_data:"尚無資料",results_detail:"明細",results_by_criterion:"各項目排序",
-results_sync_cloud:"雲端同步最新成績",results_syncing:"同步中...",results_sync_done:"同步完成！",
+results_sync_cloud:"雲端同步最新成績",results_syncing:"同步中...",results_sync_done:"同步完成！已更新 {n} 筆成績。",
 results_push_cloud:"匯出至雲端報表",results_pushing:"匯出中...",results_push_done:"報表已同步！",
+results_open_sheets:"開啟 Google Sheets",
 gas_title:"部署 & 雲端設定指南",
 deploy_title:"如何啟用雙向雲端同步",
 deploy_step1:"步驟 1：建立 Google Sheets",deploy_step1_desc:"新建 Google Sheets，開啟「擴充功能 -> Apps Script」。",
 deploy_step2:"步驟 2：部署 GAS 腳本",deploy_step2_desc:"貼上腳本。點擊「部署 -> 新增部署作業 -> 網頁應用程式」。",
 deploy_step3:"步驟 3：設定權限",deploy_step3_desc:"執行身分「我」，存取權「所有人」，複製 Web App URL。",
 deploy_step4:"步驟 4：貼入 HTML",deploy_step4_desc:"用記事本打開 index.html，在第20行 window.CLOUD_GAS_URL = \"\"; 內貼上網址。",
-email_title:"關於寄送 Email",
+email_title:"關於雲端同步與寄送 Email",
 gas_step1:"在雲端模式下，點擊【推送到雲端資料庫】會自動建立雲端資料表並同步 TA 帳號。",
-gas_step2:"您可以直接在「登入碼」頁面點擊按鈕，遠端遙控寄信。",
+gas_step2:"您可以直接在「登入碼」頁面點擊按鈕，遠端遙控 GAS 幫您寄信給學生。",
 gas_step3:"若要每天自動催繳，請在 Apps Script 中新增「時間驅動」的觸發條件執行 sendReminders。",
 gas_copy_script:"複製 GAS 腳本",gas_copied:"已複製！",
 theme_light:"淺色",theme_dark:"深色",lang_switch:"EN",
@@ -175,6 +182,7 @@ setup_csv_format:"Columns: id, dept, name_zh, name_en, group",
 setup_csv_loaded:"Loaded {n} students in {g} groups",
 setup_roster_preview:"Roster Preview",setup_roster_dept:"Dept",setup_roster_id:"ID",setup_roster_name_zh:"Name (ZH)",setup_roster_name_en:"Name (EN)",setup_roster_email:"Email",setup_roster_group:"Group",setup_roster_auto:"auto",setup_roster_manual:"manual",setup_roster_clear:"Clear Roster",setup_roster_edit_email:"Click email to edit",
 setup_parsing:"Parsing...",setup_parse_error:"Parse error: {e}",
+setup_manual_add:"Manual Add",setup_manual_add_btn:"Add",setup_manual_req:"Please provide ID, Chinese Name and Group.",setup_manual_dup:"Student ID already exists.",
 setup_criteria_title:"Custom Rubric",
 setup_criteria_import:"Import Rubric",
 setup_criteria_import_desc:"Upload document for auto-extraction",
@@ -183,17 +191,19 @@ setup_add_criterion:"+ Add Criterion",
 setup_criterion_zh:"Chinese Name",setup_criterion_en:"English Name",
 setup_criterion_desc_zh:"Chinese Description",setup_criterion_desc_en:"English Description",
 setup_remove:"Remove",setup_weight_range:"Weight Factor",setup_weight_min:"Min",setup_weight_max:"Max",
-setup_save:"Save Settings",setup_saved:"Settings saved!",
+setup_save:"Save Settings",setup_saved:"Settings saved!",setup_ta_save_confirm:"You are saving settings as a TA. Confirm overwrite?",
 setup_assignment:"Assignment",setup_assignment_ph:"e.g., Midterm Report",
-setup_group_score:"Group Score",setup_group_score_ph:"e.g., 85",setup_group_score_desc:"Weight factor × group score = final score",
+setup_group_score:"Group Score (Default 1)",setup_group_score_ph:"e.g., 85",setup_group_score_desc:"Weight factor × group score = final score",
 setup_deadline:"Deadline (Default 23:59 Due)",setup_deadline_ph:"e.g., 2026-04-15",
 setup_eval_url:"App URL",setup_eval_url_ph:"Deployed URL",
+setup_sheets_url:"Google Sheets URL (Optional)",setup_sheets_url_ph:"Paste URL for quick access",
+setup_allow_resubmit:"Allow students to resubmit and overwrite before deadline",
 codes_title:"Login Codes",codes_generate:"Generate Codes",
 codes_export_gas:"Copy Data",codes_export_csv:"Export CSV",codes_copy_done:"Copied!",
 codes_push:"Push to Cloud",codes_pushing:"Pushing...",codes_push_done:"Cloud synced!",codes_push_error:"Push failed: {e}",
 codes_cloud_send:"Cloud Send Emails", codes_cloud_remind:"Cloud Send Reminders", codes_sending:"Sending...",
 codes_send_confirm:"Send emails to students via cloud?\n(Ensure data is pushed first)",
-codes_status:"Status",codes_submitted:"Submitted",codes_pending:"Pending",
+codes_sync:"Sync Status",codes_status:"Status",codes_submitted:"Submitted",codes_pending:"Pending",
 codes_code:"Code",codes_student:"Student",codes_group:"Group",
 eval_title:"Peer Evaluation",eval_criterion:"Criterion",
 eval_instruction:"Drag members into rank slots (1 = best, ties allowed)",
@@ -208,8 +218,9 @@ results_avg_rank:"Avg Rank",results_percentile:"PR",results_weight:"Weight",
 results_group_score:"Grp Score",results_final_score:"Final Score",
 results_submissions:"Progress",results_export:"Export CSV",
 results_no_data:"No data yet",results_detail:"Details",results_by_criterion:"By Criterion",
-results_sync_cloud:"Sync from Cloud",results_syncing:"Syncing...",results_sync_done:"Sync complete!",
+results_sync_cloud:"Sync from Cloud",results_syncing:"Syncing...",results_sync_done:"Synced {n} records!",
 results_push_cloud:"Push to Sheets",results_pushing:"Pushing...",results_push_done:"Sheets synced!",
+results_open_sheets:"Open Google Sheets",
 gas_title:"Cloud Setup Guide",
 deploy_title:"How to Enable Cloud",
 deploy_step1:"Step 1: Google Sheets",deploy_step1_desc:"Create Sheets -> Extensions -> Apps Script.",
@@ -291,6 +302,7 @@ function doPost(e) {
       sSheet.appendRow(['assignment', data.assignment || '']);
       sSheet.appendRow(['deadline', data.deadline || '']);
       sSheet.appendRow(['eval_url', data.evalUrl || '']);
+      sSheet.appendRow(['allow_resubmit', data.allowReSubmit ? 'true' : 'false']);
       
       output.ok = true;
     } 
@@ -309,7 +321,6 @@ function doPost(e) {
       resSheet.clear();
       if(data.rows && data.rows.length > 0) {
         resSheet.getRange(1, 1, data.rows.length, data.rows[0].length).setValues(data.rows);
-        // 幫欄位標題美化一下
         resSheet.getRange(1, 1, 1, data.rows[0].length).setFontWeight("bold").setBackground("#004030").setFontColor("#ffffff");
         resSheet.setFrozenRows(1);
       }
@@ -328,10 +339,18 @@ function doPost(e) {
       }
       if (!user) throw new Error('Invalid login code (登入碼無效)');
 
-      const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
-      // 在新版中，student_id 一樣在 column 0
-      for(let i=1; i<subs.length; i++) {
-        if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評)');
+      const sets = ss.getSheetByName('Settings').getDataRange().getValues();
+      let assignment = '', allowResubmit = false;
+      for(let i=1; i<sets.length; i++) {
+        if(sets[i][0] === 'assignment') assignment = sets[i][1];
+        if(sets[i][0] === 'allow_resubmit') allowResubmit = (sets[i][1] === 'true' || sets[i][1] === true);
+      }
+
+      if (!allowResubmit) {
+        const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
+        for(let i=1; i<subs.length; i++) {
+          if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評，目前未開放重複提交)');
+        }
       }
 
       const groupMembers = [];
@@ -347,12 +366,6 @@ function doPost(e) {
         criteria.push({ id: crits[i][0], name_zh: crits[i][1], name_en: crits[i][2], desc_zh: crits[i][3], desc_en: crits[i][4] });
       }
 
-      const sets = ss.getSheetByName('Settings').getDataRange().getValues();
-      let assignment = '';
-      for(let i=1; i<sets.length; i++) {
-        if(sets[i][0] === 'assignment') assignment = sets[i][1];
-      }
-
       output.ok = true;
       output.user = user;
       output.groupMembers = groupMembers;
@@ -361,11 +374,10 @@ function doPost(e) {
     }
     else if (action === 'submit') {
       const sid = String(data.student_id);
-      const grp = String(data.group || ''); // <--- 新增紀錄組別
+      const grp = String(data.group || ''); // <--- 記錄組別
       const payload = JSON.stringify(data.evaluations);
       let sheet = ss.getSheetByName('Submissions');
       
-      // 如果試算表是空的，加入表頭
       if (sheet.getLastRow() === 0) {
         sheet.appendRow(['student_id', 'group', 'evaluations', 'timestamp']);
       }
@@ -379,12 +391,13 @@ function doPost(e) {
     else if (action === 'admin_login' || action === 'admin_sync') {
       const sets = ss.getSheetByName('Settings').getDataRange().getValues();
       let users = [];
-      let assignment = '', deadline = '', evalUrl = '';
+      let assignment = '', deadline = '', evalUrl = '', allowReSubmit = false;
       for(let i=1; i<sets.length; i++) {
         if(sets[i][0] === 'users') { try { users = JSON.parse(sets[i][1]); } catch(e){} }
         if(sets[i][0] === 'assignment') assignment = sets[i][1];
         if(sets[i][0] === 'deadline') deadline = sets[i][1];
         if(sets[i][0] === 'eval_url') evalUrl = sets[i][1];
+        if(sets[i][0] === 'allow_resubmit') allowReSubmit = (sets[i][1] === 'true' || sets[i][1] === true);
       }
 
       let user = null;
@@ -392,7 +405,6 @@ function doPost(e) {
         const uid = String(data.uid || '').trim();
         const pw = String(data.pw || '').trim();
         
-        // 防呆：如果雲端還沒有任何使用者(初次使用或尚未推播)，建立預設管理員
         if (users.length === 0) {
           users = [{id:'prof',role:'professor',name:'Prof. Lo',password:'admin2026'}];
         }
@@ -425,7 +437,6 @@ function doPost(e) {
       const subsRaw = ss.getSheetByName('Submissions') ? ss.getSheetByName('Submissions').getDataRange().getValues() : [];
       const submissions = {};
       
-      // 動態抓取欄位位置，相容新舊格式
       let sidIdx = 0, payloadIdx = 1; 
       let startIdx = 1;
       if (subsRaw.length > 0) {
@@ -435,16 +446,16 @@ function doPost(e) {
           sidIdx = headers.indexOf('student_id');
           if (sidIdx === -1) sidIdx = 0;
         } else {
-          // 如果沒有 evaluations 標題，判斷第一行是不是 json
           const h = String(subsRaw[0][1] || '').toLowerCase();
           if (h.includes('{')) startIdx = 0; 
         }
       }
 
+      // 由上往下讀取，若有重複的 student_id，後面的 (最新提交) 會覆蓋前面的
       for(let i=startIdx; i<subsRaw.length; i++) {
          const sid = String(subsRaw[i][sidIdx] || '');
          let pStr = String(subsRaw[i][payloadIdx] || '');
-         if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); // fallback
+         if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); 
          
          if(sid && pStr.startsWith('{')) {
             try { submissions[sid] = JSON.parse(pStr); } catch(e){}
@@ -461,6 +472,7 @@ function doPost(e) {
       output.assignment = assignment;
       output.deadline = deadline;
       output.evalUrl = evalUrl;
+      output.allowReSubmit = allowReSubmit;
     }
   } catch (err) {
     output.ok = false;
@@ -496,7 +508,7 @@ function doSendLoginCodes() {
       + '<h2>同儕互評 Peer Evaluation</h2>'
       + '<p>同學您好：<br>請使用下方登入碼完成 <b>' + assign + '</b> 的同儕互評。</p>'
       + '<div style="background:#f0fdf4;border:2px solid #166534;padding:15px;text-align:center;font-size:24px;font-weight:bold;letter-spacing:2px;margin:20px 0;">' + code + '</div>'
-      + '<p>截止期限 Deadline: ' + deadline + ' 23:59</p>'
+      + '<p>截止期限 Deadline: ' + deadline + '</p>'
       + '<a href="' + evalUrl + '" style="background:#166534;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">前往互評 Enter -></a></div>';
     
     try { MailApp.sendEmail({to: email, subject: subject, htmlBody: html}); sent++; Utilities.sleep(300); } 
@@ -520,7 +532,12 @@ function doSendReminders() {
   const evalUrl = getSetting('eval_url');
   
   const subMap = new Set();
-  for(let i=1; i<sData.length; i++) subMap.add(String(sData[i][0]));
+  let sidIdx = 0;
+  if (sData.length > 0) {
+    const headers = sData[0].map(h => String(h).toLowerCase());
+    if (headers.includes('student_id')) sidIdx = headers.indexOf('student_id');
+  }
+  for(let i=1; i<sData.length; i++) subMap.add(String(sData[i][sidIdx]));
 
   let sent = 0, skipped = 0, failed = 0, lastErr = '';
   for (let i = 1; i < rData.length; i++) {
@@ -930,30 +947,43 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
     });
   },[]);
 
+  // ✨ (需求7) 強制清除所有殘影的防護機制
+  const cleanupGhosts = useCallback(() => {
+    document.querySelectorAll('.peer-ghost-chip').forEach(el => el.remove());
+    if(ghostRef.current) ghostRef.current = null;
+  }, []);
+
   const handleDragStart=(e,mid,from)=>{setDragItem({mid,from});e.dataTransfer.effectAllowed='move';e.target.classList.add('dragging')};
-  const handleDragEnd=(e)=>{e.target.classList.remove('dragging');setDragItem(null);setDragOverSlot(null)};
+  const handleDragEnd=(e)=>{
+    e.target.classList.remove('dragging');
+    setDragItem(null);setDragOverSlot(null);
+    cleanupGhosts();
+  };
   const handleDragOver=(e,sk)=>{e.preventDefault();e.dataTransfer.dropEffect='move';setDragOverSlot(sk)};
   const handleDragLeave=()=>setDragOverSlot(null);
-  const handleDrop=(e,to)=>{e.preventDefault();setDragOverSlot(null);if(dragItem)moveItem(dragItem.mid,dragItem.from,to)};
+  const handleDrop=(e,to)=>{
+    e.preventDefault();setDragOverSlot(null);
+    if(dragItem)moveItem(dragItem.mid,dragItem.from,to);
+    cleanupGhosts();
+  };
 
   const handleTouchStart=(e,mid,from)=>{
     const touch=e.touches[0];setDragItem({mid,from});
     const g=document.createElement('div');
+    g.className = 'peer-ghost-chip';
     const m=memberMap[mid];g.textContent=lang==='zh'?m.name_zh:m.name_en;
-    g.style.cssText=`position:fixed;z-index:9999;pointer-events:none;padding:8px 16px;background:#004030;color:#D8C3A5;border-radius:8px;font-size:14px;font-weight:600;transform:translate(-50%,-50%);left:${touch.clientX}px;top:${touch.clientY}px;`;
+    g.style.cssText=`position:fixed;z-index:9999;pointer-events:none;padding:8px 16px;background:#004030;color:#D8C3A5;border-radius:8px;font-size:14px;font-weight:600;transform:translate(-50%,-50%);left:${touch.clientX}px;top:${touch.clientY}px;box-shadow:0 10px 25px rgba(0,0,0,0.2);`;
     document.body.appendChild(g);ghostRef.current=g;
   };
   
-  // ✨ (需求A) 加入邊緣自動捲動邏輯
   const handleTouchMove=(e)=>{
-    e.preventDefault(); // 配合 CSS 的 touch-action: none 確保不破版
+    e.preventDefault(); 
     const touch=e.touches[0];
     if(ghostRef.current){
       ghostRef.current.style.left=touch.clientX+'px';
       ghostRef.current.style.top=touch.clientY+'px';
     }
 
-    // 螢幕上下邊緣偵測與自動捲動 (Auto-scroll)
     const edgeThreshold = 80;
     if (touch.clientY < edgeThreshold) {
       window.scrollBy(0, -15);
@@ -966,9 +996,9 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
   };
   
   const handleTouchEnd=()=>{
-    if(ghostRef.current){document.body.removeChild(ghostRef.current);ghostRef.current=null}
     if(dragItem&&dragOverSlot!==null)moveItem(dragItem.mid,dragItem.from,dragOverSlot==='pool'?'pool':dragOverSlot);
     setDragItem(null);setDragOverSlot(null);
+    cleanupGhosts();
   };
 
   const renderChip=(mid,sk)=>{
@@ -976,7 +1006,7 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
     const self=mid===currentUser;
     const dn=lang==='zh'?`${m.name_zh} (${m.name_en})`:`${m.name_en} (${m.name_zh})`;
     return(<div key={mid} draggable onDragStart={e=>handleDragStart(e,mid,sk)} onDragEnd={handleDragEnd}
-      onTouchStart={e=>handleTouchStart(e,mid,sk)} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+      onTouchStart={e=>handleTouchStart(e,mid,sk)} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd}
       className={`member-chip inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border
         ${self?'bg-[#004030]/10 dark:bg-[#D8C3A5]/10 border-[#004030]/30 dark:border-[#D8C3A5]/30 text-[#004030] dark:text-[#D8C3A5]'
         :'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200'} shadow-sm hover:shadow-md`}>
@@ -1011,7 +1041,6 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
 const App=()=>{
   const isCloudMode = Boolean(window.CLOUD_GAS_URL && window.CLOUD_GAS_URL.trim() !== "");
   
-  // Top-level State
   const[lang,setLang]=useState('zh');
   const[dark,setDark]=useState(false);
   const[view,setView]=useState('login');
@@ -1020,7 +1049,6 @@ const App=()=>{
   const[adminUser,setAdminUser]=useState(null); 
   const[isSubmitting,setIsSubmitting]=useState(false);
   
-  // Custom Global Dialog State
   const[dialog, setDialog] = useState(null);
   const showAlert = useCallback((msg) => setDialog({ type: 'alert', msg }), []);
   const showConfirmDialog = useCallback((msg, onConfirm) => setDialog({ type: 'confirm', msg, onConfirm }), []);
@@ -1058,7 +1086,9 @@ const App=()=>{
       assignment:s.assignment||'',
       groupScores:s.groupScores||{},
       deadline:s.deadline||'',
-      evalUrl:s.evalUrl||'https://lolopodcast.github.io/Peer-Review/'
+      evalUrl:s.evalUrl||'https://lolopodcast.github.io/Peer-Review/',
+      sheetsUrl:s.sheetsUrl||'',
+      allowReSubmit:s.allowReSubmit||false
     };
   });
 
@@ -1080,7 +1110,9 @@ const App=()=>{
   const newTaIdRef = useRef(null);
   const newTaPwRef = useRef(null);
 
-  // ─── 學生登入 ───
+  // ✨ 手動新增學生表單 State
+  const [manualStd, setManualStd] = useState({id:'', nameZh:'', nameEn:'', group:''});
+
   const doStudentLogin=async()=>{
     const code = (studentCodeRef.current?.value || '').trim();
     if(!code) return;
@@ -1102,14 +1134,13 @@ const App=()=>{
     } else {
       const sid = Object.keys(store.codes).find(k => store.codes[k] === code);
       if(!sid){showAlert(t.login_error);return}
-      if(store.submissions[sid]){showAlert(t.login_already);return}
+      if(!store.allowReSubmit && store.submissions[sid]){showAlert(t.login_already);return}
       setCurrentUser(sid);
       const init={};store.criteria.forEach(c=>{init[c.id]=null});
       setEvalRankings(init); setView('eval');
     }
   };
 
-  // ─── Admin / TA 登入 ───
   const doAdminLogin = async () => {
     const uid = (adminUserRef.current?.value || '').trim();
     const pw = (adminPwRef.current?.value || '').trim();
@@ -1126,7 +1157,9 @@ const App=()=>{
           submissions: res.submissions,
           assignment: res.assignment,
           deadline: res.deadline,
-          evalUrl: res.evalUrl
+          evalUrl: res.evalUrl,
+          allowReSubmit: res.allowReSubmit,
+          sheetsUrl: res.sheetsUrl
         });
         setAdminRole(res.user.role);
         setAdminUser(res.user);
@@ -1155,7 +1188,6 @@ const App=()=>{
     }
   };
 
-  // ─── 學生送出成績 ───
   const handleSubmitEval=()=>{
     const criteriaToUse = isCloudMode ? cloudData.criteria : store.criteria;
     const allDone = criteriaToUse.every(c=>evalRankings[c.id]!==null);
@@ -1186,7 +1218,20 @@ const App=()=>{
     });
   };
 
-  // ─── 管理者雲端推播 ───
+  // ✨ (需求4) 修改設定確認邏輯
+  const handleSaveSettings = () => {
+    const doSave = () => {
+      saveStore(store); 
+      setSavedMsg(t.setup_saved); 
+      setTimeout(()=>setSavedMsg(''),2000);
+    };
+    if (adminRole === 'ta') {
+      showConfirmDialog(t.setup_ta_save_confirm, doSave);
+    } else {
+      doSave();
+    }
+  };
+
   const handlePushToCloud=async()=>{
     if(!isCloudMode){showAlert(lang==='zh'?'請先填寫 GAS URL 以啟用雲端模式':'Please configure GAS URL to enable cloud mode');return}
     if(Object.keys(store.codes).length === 0){showAlert(lang==='zh'?'請先產生登入碼':'Please generate codes first');return}
@@ -1197,7 +1242,8 @@ const App=()=>{
         action: 'push_setup', students, criteria: store.criteria,
         users: store.users, 
         adminPw: store.users.find(u=>u.role==='professor')?.password || 'admin2026', 
-        assignment: store.assignment, deadline: store.deadline, evalUrl: store.evalUrl
+        assignment: store.assignment, deadline: store.deadline, evalUrl: store.evalUrl,
+        allowReSubmit: store.allowReSubmit, sheetsUrl: store.sheetsUrl
       });
       setPushStatus('done'); setTimeout(()=>setPushStatus(null), 5000);
     }catch(err){
@@ -1205,7 +1251,6 @@ const App=()=>{
     }
   };
 
-  // ─── 管理者雲端發信控制 ───
   const handleCloudSendEmails=async(type)=>{
     if(!isCloudMode) return;
     showConfirmDialog(t.codes_send_confirm, async () => {
@@ -1222,10 +1267,10 @@ const App=()=>{
     });
   };
 
-  // ─── 管理者雲端同步 ───
-  const handleSyncFromCloud=async()=>{
+  // ✨ (需求5) 新增同步按鈕供 Codes 等分頁使用
+  const handleSyncFromCloud=async(isSilent = false)=>{
     if(!isCloudMode) return;
-    setSyncStatus('syncing');
+    if(!isSilent) setSyncStatus('syncing');
     try {
       const pw = adminPwRef.current?.value || store.users.find(u=>u.role==='professor')?.password || 'admin2026';
       const data = await apiFetch({ action: 'admin_sync', pw });
@@ -1237,16 +1282,24 @@ const App=()=>{
         submissions: data.submissions || store.submissions,
         assignment: data.assignment || store.assignment,
         deadline: data.deadline || store.deadline,
-        evalUrl: data.evalUrl || store.evalUrl
+        evalUrl: data.evalUrl || store.evalUrl,
+        allowReSubmit: data.allowReSubmit,
+        sheetsUrl: data.sheetsUrl
       });
-      setSyncStatus('done'); setTimeout(()=>setSyncStatus(null), 3000);
+      if(!isSilent) {
+        setSyncStatus('done'); 
+        const n = Object.keys(data.submissions||{}).length;
+        showAlert(t.results_sync_done.replace('{n}', n));
+        setTimeout(()=>setSyncStatus(null), 3000);
+      }
     } catch(err) {
-      showAlert("Sync failed: " + err.message);
-      setSyncStatus(null);
+      if(!isSilent) {
+        showAlert("Sync failed: " + err.message);
+        setSyncStatus(null);
+      }
     }
   };
 
-  // ─── Shared UI Handlers ───
   const handleRosterUpload=async(e)=>{
     const file=e.target.files[0];if(!file)return;
     setParsing(true);setParseMsg('');
@@ -1260,6 +1313,31 @@ const App=()=>{
       setParseMsg({ok:true,n:students.length,g:newGroups.length});
     }catch(err){setParseMsg({ok:false,e:err.message})}
     finally{setParsing(false)}
+  };
+
+  // ✨ (需求2) 手動新增學生處理
+  const handleAddManualStudent = () => {
+    const id = manualStd.id.trim();
+    const nameZh = manualStd.nameZh.trim();
+    const group = manualStd.group.trim().toUpperCase();
+    if (!id || !nameZh || !group) return showAlert(t.setup_manual_req);
+    if (store.students.some(s => s.student_id === id)) return showAlert(t.setup_manual_dup);
+    
+    const newStudent = {
+      student_id: id,
+      name_zh: nameZh,
+      name_en: manualStd.nameEn.trim(),
+      dept: '',
+      email: autoEmail(id),
+      group: group
+    };
+    
+    const newStudents = [...store.students, newStudent];
+    const gs = {...store.groupScores};
+    if (!gs[group]) gs[group] = '1'; // 預設 1
+    
+    updateStore({students: newStudents, groupScores: gs});
+    setManualStd({id:'', nameZh:'', nameEn:'', group:''});
   };
 
   const handleCriteriaImport=async(e)=>{
@@ -1336,7 +1414,6 @@ const App=()=>{
     downloadCSV('peer_eval_results.csv',csv);
   };
 
-  // ✨ 匯出完整計算結果至 Google Sheets 工作表
   const handlePushResultsToCloud = async () => {
     if(!isCloudMode) return;
     if(!computeResults) return;
@@ -1503,6 +1580,16 @@ const App=()=>{
                   <input type="text" defaultValue={store.evalUrl} onBlur={e=>updateStore({evalUrl:e.target.value})} placeholder={t.setup_eval_url_ph} className={inputCls}/>
                 </div>
               </div>
+              <div className="pt-2">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only" checked={store.allowReSubmit} onChange={e=>updateStore({allowReSubmit:e.target.checked})} />
+                    <div className={`block w-10 h-6 rounded-full transition ${store.allowReSubmit ? 'bg-[#004030] dark:bg-[#D8C3A5]' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${store.allowReSubmit ? 'translate-x-4' : ''}`}></div>
+                  </div>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.setup_allow_resubmit}</span>
+                </label>
+              </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700">
@@ -1515,7 +1602,7 @@ const App=()=>{
               {parseMsg&&<p className={`mt-2 text-sm flex items-center gap-1 ${parseMsg.ok?'text-green-600 dark:text-green-400':'text-red-500'}`}>{parseMsg.ok?<><IconCheck size={16}/>{t.setup_csv_loaded.replace('{n}',parseMsg.n).replace('{g}',parseMsg.g)}</>:<><IconX size={16}/>{t.setup_parse_error.replace('{e}',parseMsg.e)}</>}</p>}
             </div>
 
-            {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div className="px-4 py-3 bg-[#004030]/5 dark:bg-[#D8C3A5]/5 border-b border-slate-200 dark:border-slate-700 flex flex-wrap justify-between items-center gap-2">
                 <h3 className="font-serif font-bold text-[#004030] dark:text-[#D8C3A5] flex items-center gap-2 text-sm sm:text-base">
                   <IconUsers size={16}/>{t.setup_roster_preview}
@@ -1527,9 +1614,22 @@ const App=()=>{
                     className="text-xs text-red-400 hover:text-red-600 transition">{t.setup_roster_clear}</button>}
                 </div>
               </div>
-              <div className="overflow-x-auto max-h-[420px] overflow-y-auto hide-scrollbar w-full">
-                <table className="w-full text-sm min-w-[600px]">
-                  <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0">
+              
+              {/* ✨ 需求2: 手動新增學生表單 */}
+              <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
+                <p className="text-[10px] sm:text-xs font-bold text-[#004030] dark:text-[#D8C3A5] mb-2">{t.setup_manual_add}</p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <input type="text" placeholder="ID (學號)" value={manualStd.id} onChange={e=>setManualStd({...manualStd, id:e.target.value})} className="flex-1 min-w-[80px] px-2 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none focus:border-[#004030] dark:focus:border-[#D8C3A5]" />
+                  <input type="text" placeholder="Name(ZH)" value={manualStd.nameZh} onChange={e=>setManualStd({...manualStd, nameZh:e.target.value})} className="flex-1 min-w-[70px] px-2 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none focus:border-[#004030]" />
+                  <input type="text" placeholder="Name(EN)" value={manualStd.nameEn} onChange={e=>setManualStd({...manualStd, nameEn:e.target.value})} className="flex-1 min-w-[70px] px-2 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none focus:border-[#004030]" />
+                  <input type="text" placeholder="Group" value={manualStd.group} onChange={e=>setManualStd({...manualStd, group:e.target.value})} className="w-16 px-2 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none focus:border-[#004030]" />
+                  <button onClick={handleAddManualStudent} className="px-3 py-1.5 bg-[#004030] text-white dark:bg-[#D8C3A5] dark:text-[#004030] text-xs font-bold rounded hover:opacity-90">{t.setup_manual_add_btn}</button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-[350px] overflow-y-auto hide-scrollbar w-full">
+                {store.students.length > 0 && <table className="w-full text-sm min-w-[600px]">
+                  <thead className="bg-slate-50 dark:bg-slate-700/50 sticky top-0 z-10">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">#</th>
                       <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300 text-xs">{t.setup_roster_id}</th>
@@ -1563,9 +1663,9 @@ const App=()=>{
                       </tr>)
                     })}
                   </tbody>
-                </table>
+                </table>}
               </div>
-            </div>}
+            </div>
 
             {groupNames.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700">
               <h3 className="font-serif font-bold text-base sm:text-lg text-[#004030] dark:text-[#D8C3A5] mb-1">{t.setup_group_score}</h3>
@@ -1573,7 +1673,7 @@ const App=()=>{
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {groupNames.map(g=><div key={g}>
                   <label className="text-[10px] sm:text-xs font-medium text-slate-500 mb-1 block">{g} ({groups[g].length}{lang==='zh'?'人':'p'})</label>
-                  <input type="number" defaultValue={store.groupScores[g]||''} onBlur={e=>updateStore({groupScores:{...store.groupScores,[g]:e.target.value}})}
+                  <input type="number" defaultValue={store.groupScores[g]||'1'} onBlur={e=>updateStore({groupScores:{...store.groupScores,[g]:e.target.value}})}
                     placeholder={t.setup_group_score_ph} className="w-full px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#004030] focus:outline-none text-xs sm:text-sm"/>
                 </div>)}
               </div>
@@ -1630,7 +1730,15 @@ const App=()=>{
               </div>
             </div>
 
-            <button onClick={()=>{saveStore(store);setSavedMsg(t.setup_saved);setTimeout(()=>setSavedMsg(''),2000)}}
+            {/* ✨ (需求6) Google Sheets URL */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 space-y-4">
+               <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">{t.setup_sheets_url}</label>
+                  <input type="text" defaultValue={store.sheetsUrl} onBlur={e=>updateStore({sheetsUrl:e.target.value})} placeholder={t.setup_sheets_url_ph} className={inputCls}/>
+               </div>
+            </div>
+
+            <button onClick={handleSaveSettings}
               className="w-full py-3 sm:py-4 bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] font-serif font-bold text-sm sm:text-base rounded-xl hover:opacity-90 transition shadow-md">{t.setup_save}</button>
             {savedMsg&&<p className="text-center text-green-600 dark:text-green-400 text-xs sm:text-sm">{savedMsg}</p>}
           </div>}
@@ -1644,6 +1752,7 @@ const App=()=>{
                   <IconCopy size={16}/>{codeCopied?t.codes_copy_done:t.codes_export_gas}
                 </button>
               ) : (
+                <>
                 <button onClick={handlePushToCloud} disabled={pushStatus==='pushing'}
                   className={`flex-1 sm:flex-none justify-center px-4 py-2.5 font-bold rounded-xl transition flex items-center gap-2 text-xs sm:text-sm shadow-md ${
                     pushStatus==='done'?'bg-green-600 text-white':
@@ -1653,6 +1762,12 @@ const App=()=>{
                   <IconCloud size={16}/>
                   {pushStatus==='pushing'?t.codes_pushing:pushStatus==='done'?t.codes_push_done:pushStatus&&pushStatus.startsWith('error')?t.codes_push_error.replace('{e}',pushStatus.slice(6)):t.codes_push}
                 </button>
+                {/* ✨ 需求5: 狀態同步按鈕 */}
+                <button onClick={()=>handleSyncFromCloud()} disabled={syncStatus==='syncing'} className="flex-1 sm:flex-none justify-center px-4 py-2.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-bold rounded-xl hover:bg-blue-200 transition flex items-center gap-2 text-xs sm:text-sm">
+                   {syncStatus==='syncing' ? <IconSpinner size={16}/> : <IconRefresh size={16}/>}
+                   {t.codes_sync}
+                </button>
+                </>
               )}
             </div>
             
@@ -1677,7 +1792,7 @@ const App=()=>{
             )}
 
             {!isCloudMode && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl p-3 sm:p-4 text-xs sm:text-sm text-red-800 dark:text-red-300">
-              ⚠️ {lang==='zh'?'目前尚未填寫 GAS URL，無法使用雲端推送與自動寄信。請至「部署 & 雲端設定指南」查看教學。':'Cloud URL missing. Please check the Deploy Guide to enable cloud push and mailing.'}
+              ⚠️ {lang==='zh'?'目前尚未填寫 GAS URL，無法使用雲端推送與自動寄信。請至「雲端部署」查看教學。':'Cloud URL missing. Please check the Deploy Guide to enable cloud push and mailing.'}
             </div>}
 
             {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden w-full">
@@ -1711,7 +1826,7 @@ const App=()=>{
                   <h3 className="font-bold text-[#004030] dark:text-[#D8C3A5] text-sm sm:text-base">{lang==='zh'?'雲端成績同步':'Sync Data'}</h3>
                   <p className="text-[10px] sm:text-xs text-slate-500">{lang==='zh'?'從 Google Sheets 拉取學生最新送出的互評結果':'Fetch latest peer evaluation results from Google Sheets'}</p>
                </div>
-               <button onClick={handleSyncFromCloud} disabled={syncStatus==='syncing' || !isCloudMode}
+               <button onClick={()=>handleSyncFromCloud(false)} disabled={syncStatus==='syncing' || !isCloudMode}
                   className={`w-full sm:w-auto px-4 py-2 sm:py-2.5 font-bold rounded-xl transition flex justify-center items-center gap-2 text-xs sm:text-sm ${
                     syncStatus==='done'?'bg-green-600 text-white':
                     syncStatus==='syncing'?'bg-slate-300 text-slate-500 cursor-wait':
@@ -1719,13 +1834,19 @@ const App=()=>{
                     'bg-[#004030] dark:bg-[#D8C3A5] text-white dark:text-[#004030] hover:opacity-90'
                   }`}>
                   <IconCloud size={16}/>
-                  {syncStatus==='syncing'?t.results_syncing:syncStatus==='done'?t.results_sync_done:t.results_sync_cloud}
+                  {syncStatus==='syncing'?t.results_syncing:syncStatus==='done'?t.results_sync_done.replace('{n}',Object.keys(store.submissions).length):t.results_sync_cloud}
                </button>
             </div>
 
             {!computeResults?<div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-700"><IconBarChart size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-3"/><p className="text-slate-500 text-sm">{t.results_no_data}</p></div>
             :<>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                {/* ✨ (需求6) Google Sheets 連結 */}
+                {store.sheetsUrl && (
+                  <a href={store.sheetsUrl} target="_blank" rel="noopener noreferrer" className="px-3 sm:px-4 py-2 sm:py-2.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-bold rounded-xl hover:bg-blue-200 transition flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm shadow-sm">
+                    <IconFile size={14}/> {t.results_open_sheets}
+                  </a>
+                )}
                 {isCloudMode && (
                    <button onClick={handlePushResultsToCloud} disabled={syncStatus==='pushing_results'} className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl hover:bg-slate-300 transition flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-sm shadow-sm disabled:opacity-50">
                      {syncStatus==='pushing_results' ? <IconSpinner size={14}/> : <IconCloud size={14}/>}
