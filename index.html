@@ -65,12 +65,12 @@ window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1
 <script type="text/babel">
 const{useState,useEffect,useRef,useCallback,useMemo}=React;
 
-// ─── 雲端連線工具 (Cloud API Wrapper 加上 15秒超時防護與錯誤攔截) ───
+// ─── 雲端連線工具 (防禦升級版：嚴密捕捉所有連線異常，保證不卡死) ───
 const apiFetch = async (payload) => {
   if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL，無法執行雲端功能。");
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒強制中斷，避免無限繞圈圈
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒強制中斷
   
   try {
     const res = await fetch(window.CLOUD_GAS_URL, {
@@ -85,21 +85,22 @@ const apiFetch = async (payload) => {
     const text = await res.text();
     try {
       const data = JSON.parse(text);
-      if (!data.ok) throw new Error(data.error || "API 錯誤");
+      if (!data.ok) throw new Error(data.error || "API 發生錯誤");
       return data;
     } catch(e) {
-      console.error("Google Server 回傳非預期格式:", text);
-      throw new Error(e.message === "API 錯誤" ? e.message : "雲端伺服器異常或流量超載，請稍後再試。");
+      console.error("Google Server 回傳格式錯誤:", text);
+      throw new Error(e.message === "API 發生錯誤" ? e.message : "雲端伺服器回傳異常，可能是試算表負載過大，請稍後再試。");
     }
   } catch (error) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error("雲端伺服器無回應 (連線逾時)，請檢查網路或稍後再試。");
+    const errMsg = error?.message || String(error);
+    if (error?.name === 'AbortError' || errMsg.includes('AbortError')) {
+      throw new Error("雲端連線逾時 (超過 15 秒無回應)。請重新整理，或檢查網路狀態。");
     }
-    if (error.message.includes('Failed to fetch')) {
-      throw new Error("網路連線失敗或被阻擋，請確認網路狀態。");
+    if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+      throw new Error("網路連線失敗或遭瀏覽器阻擋，請確認網路狀態。");
     }
-    throw error;
+    throw new Error("系統連線異常：" + errMsg);
   }
 };
 
@@ -263,7 +264,7 @@ cloud_mode_on:"☁️ Cloud Mode Active",cloud_mode_off:"💻 Local Mode"
 }
 };
 
-// ─── 新版 GAS 雙向雲端腳本 (REST API) ───
+// ─── 新版 GAS 雙向雲端腳本 (REST API - 防空白行超載版) ───
 const GAS_SCRIPT = `/**
  * Peer Evaluation System — Cloud Backend
  * 雙向雲端資料庫與發信系統
@@ -330,7 +331,7 @@ function doPost(e) {
       
       output.ok = true;
     } 
-    // ─── 新增：推播計算結果至 Results 工作表 ───
+    // ─── 推播計算結果至 Results 工作表 ───
     else if (action === 'push_results') {
       const sets = ss.getSheetByName('Settings').getDataRange().getValues();
       let users = [];
@@ -350,12 +351,15 @@ function doPost(e) {
       }
       output.ok = true;
     }
+    // ─── 學生登入 ───
     else if (action === 'login') {
       const code = String(data.code).trim();
       const roster = ss.getSheetByName('Roster').getDataRange().getValues();
       let user = null;
       
+      // 🛡️ 防護：略過空白行
       for(let i=1; i<roster.length; i++) {
+        if (!String(roster[i][0]).trim()) continue;
         if(String(roster[i][5]).trim() === code) {
           user = { student_id: String(roster[i][0]), name_zh: roster[i][1], name_en: roster[i][2], group: roster[i][4] };
           break;
@@ -371,14 +375,19 @@ function doPost(e) {
       }
 
       if (!allowResubmit) {
-        const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
-        for(let i=1; i<subs.length; i++) {
-          if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評，目前未開放重新提交)');
+        const subsSheet = ss.getSheetByName('Submissions');
+        if (subsSheet && subsSheet.getLastRow() > 0) {
+          const subs = subsSheet.getDataRange().getValues();
+          for(let i=1; i<subs.length; i++) {
+            if (!String(subs[i][0]).trim()) continue;
+            if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評，目前未開放重新提交)');
+          }
         }
       }
 
       const groupMembers = [];
       for(let i=1; i<roster.length; i++) {
+        if (!String(roster[i][0]).trim()) continue;
         if(String(roster[i][4]) === String(user.group)) {
           groupMembers.push({ student_id: String(roster[i][0]), name_zh: roster[i][1], name_en: roster[i][2], group: roster[i][4] });
         }
@@ -387,6 +396,7 @@ function doPost(e) {
       const crits = ss.getSheetByName('Criteria').getDataRange().getValues();
       const criteria = [];
       for(let i=1; i<crits.length; i++) {
+        if (!String(crits[i][0]).trim()) continue;
         criteria.push({ id: crits[i][0], name_zh: crits[i][1], name_en: crits[i][2], desc_zh: crits[i][3], desc_en: crits[i][4] });
       }
 
@@ -396,6 +406,7 @@ function doPost(e) {
       output.criteria = criteria;
       output.assignment = assignment;
     }
+    // ─── 學生送出成績 ───
     else if (action === 'submit') {
       const sid = String(data.student_id);
       const grp = String(data.group || ''); // <--- 記錄組別
@@ -448,7 +459,8 @@ function doPost(e) {
       const rosterRaw = ss.getSheetByName('Roster') ? ss.getSheetByName('Roster').getDataRange().getValues() : [];
       const students = []; const codes = {};
       for(let i=1; i<rosterRaw.length; i++) {
-         const sid = String(rosterRaw[i][0]);
+         const sid = String(rosterRaw[i][0]).trim();
+         if (!sid) continue; // 🛡️ 防護
          students.push({ student_id: sid, name_zh: rosterRaw[i][1], name_en: rosterRaw[i][2], email: rosterRaw[i][3], group: rosterRaw[i][4] });
          codes[sid] = String(rosterRaw[i][5]);
       }
@@ -456,10 +468,11 @@ function doPost(e) {
       const critsRaw = ss.getSheetByName('Criteria') ? ss.getSheetByName('Criteria').getDataRange().getValues() : [];
       const criteria = [];
       for(let i=1; i<critsRaw.length; i++) {
-         criteria.push({ id: critsRaw[i][0], name_zh: critsRaw[i][1], name_en: critsRaw[i][2], desc_zh: critsRaw[i][3], desc_en: critsRaw[i][4] });
+         const cid = String(critsRaw[i][0]).trim();
+         if (!cid) continue; // 🛡️ 防護
+         criteria.push({ id: cid, name_zh: critsRaw[i][1], name_en: critsRaw[i][2], desc_zh: critsRaw[i][3], desc_en: critsRaw[i][4] });
       }
 
-      // 避免因為不小心改變了整列背景顏色而抓到十幾萬筆空白資料
       const subsSheet = ss.getSheetByName('Submissions');
       const submissions = {};
       if (subsSheet) {
@@ -478,10 +491,9 @@ function doPost(e) {
             if (h.includes('{')) startIdx = 0; 
           }
 
-          // 由上往下讀取，若有重複的 student_id，後面的 (最新提交) 會覆蓋前面的
           for(let i=startIdx; i<subsRaw.length; i++) {
              const sid = String(subsRaw[i][sidIdx] || '').trim();
-             if(!sid) continue;
+             if (!sid) continue; // 🛡️ 防護
              let pStr = String(subsRaw[i][payloadIdx] || '');
              if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); 
              
@@ -568,11 +580,14 @@ function doSendReminders() {
     const headers = sData[0].map(h => String(h).toLowerCase());
     if (headers.includes('student_id')) sidIdx = headers.indexOf('student_id');
   }
-  for(let i=1; i<sData.length; i++) subMap.add(String(sData[i][sidIdx]));
+  for(let i=1; i<sData.length; i++) {
+    const sId = String(sData[i][sidIdx]).trim();
+    if(sId) subMap.add(sId);
+  }
 
   let sent = 0, skipped = 0, failed = 0, lastErr = '';
   for (let i = 1; i < rData.length; i++) {
-    const sid = String(rData[i][0]);
+    const sid = String(rData[i][0]).trim();
     const email = String(rData[i][3]).trim();
     const code = String(rData[i][5]).trim();
     
