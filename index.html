@@ -23,7 +23,6 @@ tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans
 // 只要填入此網址，系統就會自動啟用「雙向雲端同步模式」
 // =====================================================================
 window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1K-QQ25lYFhvQvcHhQSha-yviDHkXrsAvSRjwAojmAaJqDgZecLMYg/exec"; 
-// 例: "https://script.google.com/macros/s/AKfycb.../exec"
 
 </script>
 <style>
@@ -66,18 +65,42 @@ window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1
 <script type="text/babel">
 const{useState,useEffect,useRef,useCallback,useMemo}=React;
 
-// ─── 雲端連線工具 (Cloud API Wrapper) ───
+// ─── 雲端連線工具 (Cloud API Wrapper 加上 15秒超時防護與錯誤攔截) ───
 const apiFetch = async (payload) => {
   if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL，無法執行雲端功能。");
-  const res = await fetch(window.CLOUD_GAS_URL, {
-    method: 'POST',
-    redirect: 'follow', 
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || "API 錯誤");
-  return data;
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒強制中斷，避免無限繞圈圈
+  
+  try {
+    const res = await fetch(window.CLOUD_GAS_URL, {
+      method: 'POST',
+      redirect: 'follow', 
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      if (!data.ok) throw new Error(data.error || "API 錯誤");
+      return data;
+    } catch(e) {
+      console.error("Google Server 回傳非預期格式:", text);
+      throw new Error(e.message === "API 錯誤" ? e.message : "雲端伺服器異常或流量超載，請稍後再試。");
+    }
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error("雲端伺服器無回應 (連線逾時)，請檢查網路或稍後再試。");
+    }
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error("網路連線失敗或被阻擋，請確認網路狀態。");
+    }
+    throw error;
+  }
 };
 
 // ─── Bilingual Dict ───
@@ -303,6 +326,7 @@ function doPost(e) {
       sSheet.appendRow(['deadline', data.deadline || '']);
       sSheet.appendRow(['eval_url', data.evalUrl || '']);
       sSheet.appendRow(['allow_resubmit', data.allowReSubmit ? 'true' : 'false']);
+      sSheet.appendRow(['sheets_url', data.sheetsUrl || '']);
       
       output.ok = true;
     } 
@@ -349,7 +373,7 @@ function doPost(e) {
       if (!allowResubmit) {
         const subs = ss.getSheetByName('Submissions').getDataRange().getValues();
         for(let i=1; i<subs.length; i++) {
-          if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評，目前未開放重複提交)');
+          if(String(subs[i][0]) === user.student_id) throw new Error('Already submitted (您已完成互評，目前未開放重新提交)');
         }
       }
 
@@ -391,12 +415,13 @@ function doPost(e) {
     else if (action === 'admin_login' || action === 'admin_sync') {
       const sets = ss.getSheetByName('Settings').getDataRange().getValues();
       let users = [];
-      let assignment = '', deadline = '', evalUrl = '', allowReSubmit = false;
+      let assignment = '', deadline = '', evalUrl = '', allowReSubmit = false, sheetsUrl = '';
       for(let i=1; i<sets.length; i++) {
         if(sets[i][0] === 'users') { try { users = JSON.parse(sets[i][1]); } catch(e){} }
         if(sets[i][0] === 'assignment') assignment = sets[i][1];
         if(sets[i][0] === 'deadline') deadline = sets[i][1];
         if(sets[i][0] === 'eval_url') evalUrl = sets[i][1];
+        if(sets[i][0] === 'sheets_url') sheetsUrl = sets[i][1];
         if(sets[i][0] === 'allow_resubmit') allowReSubmit = (sets[i][1] === 'true' || sets[i][1] === true);
       }
 
@@ -434,32 +459,37 @@ function doPost(e) {
          criteria.push({ id: critsRaw[i][0], name_zh: critsRaw[i][1], name_en: critsRaw[i][2], desc_zh: critsRaw[i][3], desc_en: critsRaw[i][4] });
       }
 
-      const subsRaw = ss.getSheetByName('Submissions') ? ss.getSheetByName('Submissions').getDataRange().getValues() : [];
+      // 避免因為不小心改變了整列背景顏色而抓到十幾萬筆空白資料
+      const subsSheet = ss.getSheetByName('Submissions');
       const submissions = {};
-      
-      let sidIdx = 0, payloadIdx = 1; 
-      let startIdx = 1;
-      if (subsRaw.length > 0) {
-        const headers = subsRaw[0].map(h => String(h).toLowerCase());
-        if (headers.includes('evaluations')) {
-          payloadIdx = headers.indexOf('evaluations');
-          sidIdx = headers.indexOf('student_id');
-          if (sidIdx === -1) sidIdx = 0;
-        } else {
-          const h = String(subsRaw[0][1] || '').toLowerCase();
-          if (h.includes('{')) startIdx = 0; 
-        }
-      }
+      if (subsSheet) {
+        const lastRow = subsSheet.getLastRow();
+        if (lastRow > 0) {
+          const subsRaw = subsSheet.getRange(1, 1, lastRow, 4).getValues();
+          let sidIdx = 0, payloadIdx = 1; 
+          let startIdx = 1;
+          const headers = subsRaw[0].map(h => String(h).toLowerCase());
+          if (headers.includes('evaluations')) {
+            payloadIdx = headers.indexOf('evaluations');
+            sidIdx = headers.indexOf('student_id');
+            if (sidIdx === -1) sidIdx = 0;
+          } else {
+            const h = String(subsRaw[0][1] || '').toLowerCase();
+            if (h.includes('{')) startIdx = 0; 
+          }
 
-      // 由上往下讀取，若有重複的 student_id，後面的 (最新提交) 會覆蓋前面的
-      for(let i=startIdx; i<subsRaw.length; i++) {
-         const sid = String(subsRaw[i][sidIdx] || '');
-         let pStr = String(subsRaw[i][payloadIdx] || '');
-         if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); 
-         
-         if(sid && pStr.startsWith('{')) {
-            try { submissions[sid] = JSON.parse(pStr); } catch(e){}
-         }
+          // 由上往下讀取，若有重複的 student_id，後面的 (最新提交) 會覆蓋前面的
+          for(let i=startIdx; i<subsRaw.length; i++) {
+             const sid = String(subsRaw[i][sidIdx] || '').trim();
+             if(!sid) continue;
+             let pStr = String(subsRaw[i][payloadIdx] || '');
+             if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); 
+             
+             if(pStr.startsWith('{')) {
+                try { submissions[sid] = JSON.parse(pStr); } catch(e){}
+             }
+          }
+        }
       }
 
       output.ok = true;
@@ -472,6 +502,7 @@ function doPost(e) {
       output.assignment = assignment;
       output.deadline = deadline;
       output.evalUrl = evalUrl;
+      output.sheetsUrl = sheetsUrl;
       output.allowReSubmit = allowReSubmit;
     }
   } catch (err) {
@@ -1792,7 +1823,7 @@ const App=()=>{
             )}
 
             {!isCloudMode && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 rounded-xl p-3 sm:p-4 text-xs sm:text-sm text-red-800 dark:text-red-300">
-              ⚠️ {lang==='zh'?'目前尚未填寫 GAS URL，無法使用雲端推送與自動寄信。請至「雲端部署」查看教學。':'Cloud URL missing. Please check the Deploy Guide to enable cloud push and mailing.'}
+              ⚠️ {lang==='zh'?'目前尚未填寫 GAS URL，無法使用雲端推送與自動寄信。請至「部署 & 雲端設定指南」查看教學。':'Cloud URL missing. Please check the Deploy Guide to enable cloud push and mailing.'}
             </div>}
 
             {store.students.length>0&&<div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden w-full">
