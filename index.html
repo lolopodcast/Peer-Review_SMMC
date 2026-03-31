@@ -22,7 +22,7 @@ tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans
 // ⚠️ 教授/TA 請注意：請將您部署後的 Google Apps Script Web App URL 填入下方引號中
 // 只要填入此網址，系統就會自動啟用「雙向雲端同步模式」
 // =====================================================================
-window.CLOUD_GAS_URL = "https://script.google.com/macros/s/AKfycbyFGJT7vtawFFjJ1K-QQ25lYFhvQvcHhQSha-yviDHkXrsAvSRjwAojmAaJqDgZecLMYg/exec"; 
+window.CLOUD_GAS_URL = ""; 
 
 </script>
 <style>
@@ -70,7 +70,7 @@ const apiFetch = async (payload) => {
   if (!window.CLOUD_GAS_URL) throw new Error("未設定雲端 GAS URL，無法執行雲端功能。");
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒強制中斷
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 秒強制中斷，避免無限繞圈圈
   
   try {
     const res = await fetch(window.CLOUD_GAS_URL, {
@@ -95,7 +95,7 @@ const apiFetch = async (payload) => {
     clearTimeout(timeoutId);
     const errMsg = error?.message || String(error);
     if (error?.name === 'AbortError' || errMsg.includes('AbortError')) {
-      throw new Error("雲端連線逾時 (超過 15 秒無回應)。請重新整理，或檢查網路狀態。");
+      throw new Error("雲端連線逾時 (超過 15 秒無回應)。請重新整理，或稍後再試。");
     }
     if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
       throw new Error("網路連線失敗或遭瀏覽器阻擋，請確認網路狀態。");
@@ -179,7 +179,7 @@ gas_step2:"您可以直接在「登入碼」頁面點擊按鈕，遠端遙控 GA
 gas_step3:"若要每天自動催繳，請在 Apps Script 中新增「時間驅動」的觸發條件執行 sendReminders。",
 gas_copy_script:"複製 GAS 腳本",gas_copied:"已複製！",
 theme_light:"淺色",theme_dark:"深色",lang_switch:"EN",
-date:"Version 2026.03.29",copyright:"For Educational Use Only",
+date:"Version 2026.03.31",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
 architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
 cloud_mode_on:"☁️ 雲端模式啟用中",cloud_mode_off:"💻 本機單機模式"
@@ -257,14 +257,14 @@ gas_step2:"Use buttons in Codes tab to send emails remotely.",
 gas_step3:"Add time-driven trigger for sendReminders in Apps Script for daily automation.",
 gas_copy_script:"Copy GAS Script",gas_copied:"Copied!",
 theme_light:"Light",theme_dark:"Dark",lang_switch:"中",
-date:"Version 2026.03.29",copyright:"For Educational Use Only",
+date:"Version 2026.03.31",copyright:"For Educational Use Only",
 architect_label:"Architect:",architect_name:"Prof. Shihmin Lo",
 architect_url:"https://www.ibs.ncnu.edu.tw/index.php/faculty/tenured-professor/299-smlo",
 cloud_mode_on:"☁️ Cloud Mode Active",cloud_mode_off:"💻 Local Mode"
 }
 };
 
-// ─── 新版 GAS 雙向雲端腳本 (REST API - 防空白行超載版) ───
+// ─── 新版 GAS 雙向雲端腳本 (REST API - 防錯機制強化版) ───
 const GAS_SCRIPT = `/**
  * Peer Evaluation System — Cloud Backend
  * 雙向雲端資料庫與發信系統
@@ -357,7 +357,6 @@ function doPost(e) {
       const roster = ss.getSheetByName('Roster').getDataRange().getValues();
       let user = null;
       
-      // 🛡️ 防護：略過空白行
       for(let i=1; i<roster.length; i++) {
         if (!String(roster[i][0]).trim()) continue;
         if(String(roster[i][5]).trim() === code) {
@@ -491,9 +490,10 @@ function doPost(e) {
             if (h.includes('{')) startIdx = 0; 
           }
 
+          // 由上往下讀取，若有重複的 student_id，後面的 (最新提交) 會覆蓋前面的
           for(let i=startIdx; i<subsRaw.length; i++) {
              const sid = String(subsRaw[i][sidIdx] || '').trim();
-             if (!sid) continue; // 🛡️ 防護
+             if(!sid) continue; // 🛡️ 防護
              let pStr = String(subsRaw[i][payloadIdx] || '');
              if(!pStr.startsWith('{')) pStr = String(subsRaw[i][1] || ''); 
              
@@ -605,8 +605,15 @@ function doSendReminders() {
   return res;
 }
 
-function sendLoginCodes() { const msg = doSendLoginCodes(); if(SpreadsheetApp.getActiveSpreadsheet()) SpreadsheetApp.getUi().alert(msg); }
-function sendReminders() { const msg = doSendReminders(); if(SpreadsheetApp.getActiveSpreadsheet()) SpreadsheetApp.getUi().alert(msg); }
+// ✨ 防護：自動忽略背景執行時的警告彈窗錯誤
+function sendLoginCodes() { 
+  const msg = doSendLoginCodes(); 
+  try { if(SpreadsheetApp.getActiveSpreadsheet()) SpreadsheetApp.getUi().alert(msg); } catch(e) { console.log(msg); } 
+}
+function sendReminders() { 
+  const msg = doSendReminders(); 
+  try { if(SpreadsheetApp.getActiveSpreadsheet()) SpreadsheetApp.getUi().alert(msg); } catch(e) { console.log(msg); } 
+}
 `;
 
 // ─── Icons ───
@@ -633,7 +640,7 @@ const IconMail=p=><svg xmlns="http://www.w3.org/2000/svg" width={p.size||20} hei
 // ─── Utilities ───
 function generateCode(len=10){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<len;i++)s+=c[Math.floor(Math.random()*c.length)];return s}
 
-// ✨ (需求B) 更新校準邏輯：如果多人排名相同，給予平均排名 (例如 4名並列4個位子，校準後為 5.5)
+// ✨ 校準邏輯：如果多人排名相同，給予平均排名
 function calibrateRanks(assignments, groupSize) {
   const entries = Object.entries(assignments).sort((a, b) => a[1] - b[1]);
   const cal = {};
@@ -656,7 +663,6 @@ function rankToPercentile(r,n){return n<=1?1:(n-r)/(n-1)}
 function percentileToWeight(p,mn,mx){return mn+p*(mx-mn)}
 function downloadCSV(name,csv){const b=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
 
-// 安全的剪貼簿複製函式 (支援 iframe/無 Secure Context 的環境)
 function copyTextToClipboard(text, onSuccess) {
   const fallbackCopy = (txt) => {
     const el = document.createElement('textarea');
@@ -993,7 +999,6 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
     });
   },[]);
 
-  // ✨ (需求7) 強制清除所有殘影的防護機制
   const cleanupGhosts = useCallback(() => {
     document.querySelectorAll('.peer-ghost-chip').forEach(el => el.remove());
     if(ghostRef.current) ghostRef.current = null;
@@ -1087,6 +1092,7 @@ const RankingBoard=({members,currentUser,lang,onRankingChange,existingRanking})=
 const App=()=>{
   const isCloudMode = Boolean(window.CLOUD_GAS_URL && window.CLOUD_GAS_URL.trim() !== "");
   
+  // Top-level State
   const[lang,setLang]=useState('zh');
   const[dark,setDark]=useState(false);
   const[view,setView]=useState('login');
@@ -1095,6 +1101,7 @@ const App=()=>{
   const[adminUser,setAdminUser]=useState(null); 
   const[isSubmitting,setIsSubmitting]=useState(false);
   
+  // Custom Global Dialog State
   const[dialog, setDialog] = useState(null);
   const showAlert = useCallback((msg) => setDialog({ type: 'alert', msg }), []);
   const showConfirmDialog = useCallback((msg, onConfirm) => setDialog({ type: 'confirm', msg, onConfirm }), []);
@@ -1156,7 +1163,6 @@ const App=()=>{
   const newTaIdRef = useRef(null);
   const newTaPwRef = useRef(null);
 
-  // ✨ 手動新增學生表單 State
   const [manualStd, setManualStd] = useState({id:'', nameZh:'', nameEn:'', group:''});
 
   const doStudentLogin=async()=>{
@@ -1264,7 +1270,6 @@ const App=()=>{
     });
   };
 
-  // ✨ (需求4) 修改設定確認邏輯
   const handleSaveSettings = () => {
     const doSave = () => {
       saveStore(store); 
@@ -1313,7 +1318,6 @@ const App=()=>{
     });
   };
 
-  // ✨ (需求5) 新增同步按鈕供 Codes 等分頁使用
   const handleSyncFromCloud=async(isSilent = false)=>{
     if(!isCloudMode) return;
     if(!isSilent) setSyncStatus('syncing');
@@ -1361,7 +1365,6 @@ const App=()=>{
     finally{setParsing(false)}
   };
 
-  // ✨ (需求2) 手動新增學生處理
   const handleAddManualStudent = () => {
     const id = manualStd.id.trim();
     const nameZh = manualStd.nameZh.trim();
@@ -1380,7 +1383,7 @@ const App=()=>{
     
     const newStudents = [...store.students, newStudent];
     const gs = {...store.groupScores};
-    if (!gs[group]) gs[group] = '1'; // 預設 1
+    if (!gs[group]) gs[group] = '1'; 
     
     updateStore({students: newStudents, groupScores: gs});
     setManualStd({id:'', nameZh:'', nameEn:'', group:''});
